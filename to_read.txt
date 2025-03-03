@@ -1,0 +1,4 @@
+1. CMake
+2. OOP
+3. STL, Vector
+4. Const and ampersand

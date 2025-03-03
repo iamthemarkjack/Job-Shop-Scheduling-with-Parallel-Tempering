@@ -1,11 +1,12 @@
+#include "parallel_tempering.h"
+#include "tsp_problem.h"
+#include "solution.h"
+
 #include <iostream>
 #include <string>
 #include <chrono>
 #include <iomanip>
 #include <fstream>
-#include "parallel_tempering.h"
-#include "tsp_problem.h"
-#include "solution.h"
 
 void printHelp() {
     std::cout << "TSP Solver using Parallel Tempering\n";
@@ -55,6 +56,10 @@ int main(int argc, char* argv[]) {
     double maxTemp = 100.0;
     int maxIterations = 10000;
     int swapInterval = 100;
+    double targetSAP = 0.23;
+    double initialAlpha = 0.1;
+    double t0 = 100;
+    std::string historyFilename = "history.txt";
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::string outputFile;
     
@@ -81,6 +86,14 @@ int main(int argc, char* argv[]) {
             maxIterations = std::stoi(argv[++i]);
         } else if (arg == "--swap-interval" && i + 1 < argc) {
             swapInterval = std::stoi(argv[++i]);
+        } else if (arg == "--target-sap" && i + 1 < argc){
+            targetSAP = std::stoi(argv[++i]);
+        } else if (arg == "--initial-alpha" && i + 1 < argc){
+            initialAlpha = std::stoi(argv[++i]);
+        } else if (arg == "--t0" && i + 1 < argc){
+            t0 = std::stoi(argv[++i]);
+        } else if (arg == "--his_filename" && i + 1 < argc){
+            historyFilename = std::stoi(argv[++i]);
         } else if (arg == "--seed" && i + 1 < argc) {
             seed = std::stoul(argv[++i]);
         } else if (arg == "--output" && i + 1 < argc) {
@@ -127,12 +140,12 @@ int main(int argc, char* argv[]) {
         
         auto startTime = std::chrono::high_resolution_clock::now();
         
-        ParallelTempering solver(problem, numReplicas, minTemp, maxTemp, swapInterval, maxIterations);
+        AdaptiveParallelTempering solver(problem, numReplicas, minTemp, maxTemp, swapInterval, maxIterations, targetSAP, initialAlpha, t0);
         solver.setNumThreads(numThreads);
         
         // Run the solver
         std::cout << "Starting parallel tempering algorithm...\n";
-        Solution bestSolution = solver.solve();
+        Solution bestSolution = solver.solve(historyFilename);
         
         auto endTime = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
