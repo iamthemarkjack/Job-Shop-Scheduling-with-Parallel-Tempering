@@ -31,12 +31,12 @@ target_include_directories(tsp_solver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Link OpenMP
 target_link_libraries(tsp_solver PRIVATE OpenMP::OpenMP_CXX)
 
-# Create a data directory in the build folder
-add_custom_command(
-    TARGET tsp_solver POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-    ${CMAKE_BINARY_DIR}/data
-)
+# # Create a data directory in the build folder
+# add_custom_command(
+#     TARGET tsp_solver POST_BUILD
+#     COMMAND ${CMAKE_COMMAND} -E make_directory
+#     ${CMAKE_BINARY_DIR}/data
+# )
 
 # Install
 install(TARGETS tsp_solver DESTINATION bin)

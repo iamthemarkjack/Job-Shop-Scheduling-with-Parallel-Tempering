@@ -55,7 +55,7 @@ void AdaptiveParallelTempering::initializeTemperatures() {
     // Geometric progression from minTemp to maxTemp
     double ratio = std::pow(maxTemp / minTemp, 1.0 / (numReplicas - 1));
     
-    for (int i = 0; i < numReplicas; i++) {
+    for (int i = 0; i < numReplicas; ++i) {
         temperatures[i] = minTemp * std::pow(ratio, i);
     }
 }
@@ -74,7 +74,7 @@ void AdaptiveParallelTempering::metropolisStep(Solution& solution, double temper
     // Create a candidate solution by applying a random move
     Solution candidate = solution;
     
-    // Apply a random move (e.g., 2-opt, insertion, etc.)
+    // Apply a random move
     candidate.applyRandomMove(rng);
     
     // Calculate the cost difference
@@ -115,7 +115,7 @@ void AdaptiveParallelTempering::attemptSwaps() {
     std::uniform_real_distribution<double> dist(0.0, 1.0);
     
     // Swap only between adjacent temperatures
-    for (int i = 0; i < numReplicas - 1; i++) {
+    for (int i = 0; i < numReplicas - 1; ++i) {
         totalSwapAttempts++;
         attemptedSwaps[i]++;
         
@@ -134,7 +134,7 @@ void AdaptiveParallelTempering::attemptSwaps() {
 
 void AdaptiveParallelTempering::updateSAPs() {
     // Update swap acceptance probabilities
-    for (int i = 0; i < numReplicas - 1; i++) {
+    for (int i = 0; i < numReplicas - 1; ++i) {
         if (attemptedSwaps[i] > 0) {
             swapAcceptanceProbabilities[i] = static_cast<double>(acceptedSwaps[i]) / attemptedSwaps[i];
         }
@@ -150,7 +150,7 @@ void AdaptiveParallelTempering::adjustTemperatures() {
     // Implement Algorithm 1 from the paper
     std::vector<double> newTemperatures = temperatures;
     
-    for (int i = 0; i < numReplicas - 1; i++) {
+    for (int i = 0; i < numReplicas - 1; ++i) {
         // Calculate gap between actual SAP and target SAP
         double gap = swapAcceptanceProbabilities[i] - targetSAP;
         
@@ -218,7 +218,7 @@ Solution AdaptiveParallelTempering::solve(const std::string& historyFilename) {
     while (iteration < maxIterations) {
         // Run MCMC steps for each replica in parallel
         #pragma omp parallel for num_threads(numThreads)
-        for (int i = 0; i < numReplicas; i++) {
+        for (int i = 0; i < numReplicas; ++i) {
             int threadId = omp_get_thread_num();
             
             // For each iteration, perform multiple Metropolis steps
@@ -251,6 +251,10 @@ Solution AdaptiveParallelTempering::solve(const std::string& historyFilename) {
                       << ", Best solution: " << replicas[0].getCost() << std::endl;
         }
         
+        for (int i = 0; i < numReplicas - 1; ++i) {
+            std::cout << swapAcceptanceProbabilities[i];
+        }
+
         iteration++;
     }
 
@@ -263,7 +267,7 @@ Solution AdaptiveParallelTempering::solve(const std::string& historyFilename) {
     Solution bestSolution = replicas[0];
     double bestCost = bestSolution.getCost();
     
-    for (int i = 1; i < numReplicas; i++) {
+    for (int i = 1; i < numReplicas; ++i) {
         double cost = replicas[i].getCost();
         if (cost < bestCost) {
             bestCost = cost;
@@ -285,7 +289,7 @@ void AdaptiveParallelTempering::recordCurrentState(int iteration) {
     }
     energyHistory.push_back(currentEnergies);
 
-    // Record the current SAPs (if available)
+    // Record the current SAPs
     if (iteration % swapInterval == 0 && iteration > 0) {
         sapHistory.push_back(swapAcceptanceProbabilities);
         iterationHistory.push_back(iteration);

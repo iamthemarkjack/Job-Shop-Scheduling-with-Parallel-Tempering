@@ -2,6 +2,7 @@
 #define SOLUTION_H
 
 #include "tsp_problem.h"
+
 #include <vector>
 #include <random>
 #include <memory>

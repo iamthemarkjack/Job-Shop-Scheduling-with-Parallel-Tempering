@@ -11,17 +11,21 @@
 void printHelp() {
     std::cout << "TSP Solver using Parallel Tempering\n";
     std::cout << "Usage:\n";
-    std::cout << "  --file <filename>       Load TSP instance from file\n";
-    std::cout << "  --random <num_cities>   Generate random TSP instance\n";
-    std::cout << "  --replicas <num>        Number of temperature replicas (default: 8)\n";
-    std::cout << "  --threads <num>         Number of OpenMP threads (default: same as replicas)\n";
-    std::cout << "  --min-temp <value>      Minimum temperature (default: 0.1)\n";
-    std::cout << "  --max-temp <value>      Maximum temperature (default: 100.0)\n";
-    std::cout << "  --iterations <num>      Maximum iterations (default: 10000)\n";
-    std::cout << "  --swap-interval <num>   Swap attempt interval (default: 100)\n";
-    std::cout << "  --seed <num>            Random seed (default: from system clock)\n";
-    std::cout << "  --output <filename>     Save best tour to file\n";
-    std::cout << "  --help                  Display this help message\n";
+    std::cout << "  --file <filename>           Load TSP instance from file\n";
+    std::cout << "  --random <num_cities>       Generate random TSP instance\n";
+    std::cout << "  --replicas <num>            Number of temperature replicas (default: 8)\n";
+    std::cout << "  --threads <num>             Number of OpenMP threads (default: same as replicas)\n";
+    std::cout << "  --min-temp <value>          Minimum temperature (default: 1.0)\n";
+    std::cout << "  --max-temp <value>          Maximum temperature (default: 10.0)\n";
+    std::cout << "  --iterations <num>          Maximum iterations (default: 10000)\n";
+    std::cout << "  --swap-interval <num>       Swap attempt interval (default: 100)\n";
+    std::cout << "  --target-sap <value>        Target Swap Acceptance Probability (default: 0.23)\n";
+    std::cout << "  --initial-alpha <value>     Initial value of damping factor (default: 1.0)\n";
+    std::cout << "  --t0 <num>                  Iterations after which alpha is reduced by half (default: 1000)\n";
+    std::cout << "  --his-filename <filename>   Save the history of Temperatures, SAP, Energies" ;
+    std::cout << "  --seed <num>                Random seed (default: from system clock)\n"; 
+    std::cout << "  --output <filename>         Save best tour to file\n";
+    std::cout << "  --help                      Display this help message\n";
 }
 
 void saveTourToFile(const std::string& filename, const Solution& solution) {
@@ -52,13 +56,13 @@ int main(int argc, char* argv[]) {
     int randomSize = 0;
     int numReplicas = 8;
     int numThreads = 0;  // 0 means use same as replicas
-    double minTemp = 0.1;
-    double maxTemp = 100.0;
+    double minTemp = 1.0;
+    double maxTemp = 10.0;
     int maxIterations = 10000;
     int swapInterval = 100;
     double targetSAP = 0.23;
-    double initialAlpha = 0.1;
-    double t0 = 100;
+    double initialAlpha = 1.0;
+    double t0 = 1000;
     std::string historyFilename = "history.txt";
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::string outputFile;
@@ -92,7 +96,7 @@ int main(int argc, char* argv[]) {
             initialAlpha = std::stoi(argv[++i]);
         } else if (arg == "--t0" && i + 1 < argc){
             t0 = std::stoi(argv[++i]);
-        } else if (arg == "--his_filename" && i + 1 < argc){
+        } else if (arg == "--his-filename" && i + 1 < argc){
             historyFilename = std::stoi(argv[++i]);
         } else if (arg == "--seed" && i + 1 < argc) {
             seed = std::stoul(argv[++i]);

@@ -14,13 +14,13 @@ public:
     // Constructor with parameters for adaptive tempering
     AdaptiveParallelTempering(const TSPProblem& problem, 
                       int initialReplicas = 16,     // Start with more replicas than needed
-                      double minTemp = 0.1,
-                      double maxTemp = 100.0,
+                      double minTemp = 1.0,
+                      double maxTemp = 10.0,
                       int swapInterval = 100,
                       int maxIterations = 10000,
                       double targetSAP = 0.23,       // Target swap acceptance probability
-                      double initialAlpha = 0.1,    // Initial damping factor
-                      double t0 = 100.0);           // Time constant for damping decay
+                      double initialAlpha = 1.0,    // Initial damping factor
+                      double t0 = 1000);           // Time constant for damping decay
 
     // Run the adaptive parallel tempering algorithm
     Solution solve(const std::string& historyFilename = "");
@@ -62,7 +62,7 @@ private:
     int numThreads;
     double minTemp;
     double maxTemp;
-    int swapInterval;     // N_swap in the paper
+    int swapInterval;     // N_swap
     int maxIterations;
     
     // Adaptive parameters
@@ -93,13 +93,13 @@ private:
     double calculateSwapAcceptance(const Solution& replica1, const Solution& replica2, 
                                   double temp1, double temp2);
     
-    // Adjust temperatures to achieve uniform SAP (Algorithm 1)
+    // Adjust temperatures to achieve uniform SAP
     void adjustTemperatures();
     
     // Manage replica insertion/removal
     void manageReplicas();
     
-    // Update damping factor according to equation (5)
+    // Update damping factoor
     void updateDampingFactor();
     
     // Update SAP statistics

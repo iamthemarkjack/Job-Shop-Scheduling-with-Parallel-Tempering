@@ -1,4 +1,5 @@
 #include "solution.h"
+
 #include <algorithm>
 #include <stdexcept>
 #include <iostream>
