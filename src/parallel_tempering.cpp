@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <map>
 
 // Implementation of AdaptiveParallelTempering
 
@@ -239,7 +240,7 @@ Solution AdaptiveParallelTempering::solve(const std::string& historyFilename) {
             updateSAPs();
             updateDampingFactor();
             adjustTemperatures();
-            manageReplicas();
+            // manageReplicas();
         }
 
         // Record the current state
@@ -251,10 +252,6 @@ Solution AdaptiveParallelTempering::solve(const std::string& historyFilename) {
                       << ", Best solution: " << replicas[0].getCost() << std::endl;
         }
         
-        for (int i = 0; i < numReplicas - 1; ++i) {
-            std::cout << swapAcceptanceProbabilities[i];
-        }
-
         iteration++;
     }
 
@@ -263,7 +260,7 @@ Solution AdaptiveParallelTempering::solve(const std::string& historyFilename) {
         saveHistoryToFile(historyFilename);
     }
     
-    // Return the best solution (should be at lowest temperature)
+    // Return the best solution
     Solution bestSolution = replicas[0];
     double bestCost = bestSolution.getCost();
     
@@ -304,7 +301,8 @@ void AdaptiveParallelTempering::saveHistoryToFile(const std::string& filename) c
     }
     
     // Write header
-    file << "Iteration,ReplicaIndex,Temperature,Energy,SAP" << std::endl;
+    // file << "Iteration,ReplicaIndex,Temperature,Energy,SAP" << std::endl;
+    file << "Iteration,ReplicaIndex,Temperature,Energy" << std::endl;
     
     // Write temperature data for all iterations
     for (size_t i = 0; i < temperatureHistory.size(); ++i) {
@@ -315,30 +313,32 @@ void AdaptiveParallelTempering::saveHistoryToFile(const std::string& filename) c
 
             // Write energy data
             if (j < energyHistory[i].size()) {
-                file << energyHistory[i][j] << ",";
+                file << energyHistory[i][j];
             } else {
-                file << "NA,"; // Shouldn't happen unless replicas were added/removed
+                file << "NA"; // Shouldn't happen unless replicas were added/removed
             }
             
-            // Find the corresponding SAP data
-            bool sapFound = false;
-            for (size_t k = 0; k < iterationHistory.size(); ++k) {
-                if (iterationHistory[k] == iteration) {
-                    // SAP is only defined between replicas, so we have one less SAP than temperatures
-                    if (j < sapHistory[k].size()) {
-                        file << sapHistory[k][j];
-                    } else {
-                        file << "NA"; // For the last replica, there's no SAP
-                    }
-                    sapFound = true;
-                    break;
-                }
-            }
-            
-            if (!sapFound) {
-                file << "NA"; // No SAP recorded for this iteration
-            }
-            
+            // // Find the corresponding SAP data
+            // if (j < numReplicas - 1) {
+            //     // Find the most recent SAP record for this iteration
+            //     int sapIndex = -1;
+            //     for (size_t k = 0; k < iterationHistory.size(); ++k) {
+            //         if (iterationHistory[k] <= iteration) {
+            //             sapIndex = k;
+            //         } else {
+            //             break; // iterationHistory should be sorted, so we can break early
+            //         }
+            //     }
+                
+            //     if (sapIndex >= 0 && j < sapHistory[sapIndex].size()) {
+            //         file << sapHistory[sapIndex][j];
+            //     } else {
+            //         file << "NA"; // No applicable SAP recorded
+            //     }
+            // } else {
+            //     file << "NA"; // For the last replica, there's no SAP
+            // }
+
             file << std::endl;
         }
     }
