@@ -1,4 +1,4 @@
-# Install script for directory: /home/rohith-ramanan/jssp_pt
+# Install script for directory: /home/rohith-ramanan/main
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -43,23 +43,31 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/tsp_solver" AND
-     NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/tsp_solver")
+  if(EXISTS "$ENV{DESTDIR}/home/rohith-ramanan/main/jssp_solver" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}/home/rohith-ramanan/main/jssp_solver")
     file(RPATH_CHECK
-         FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/tsp_solver"
+         FILE "$ENV{DESTDIR}/home/rohith-ramanan/main/jssp_solver"
          RPATH "")
   endif()
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "/home/rohith-ramanan/jssp_pt/build/tsp_solver")
-  if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/tsp_solver" AND
-     NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/tsp_solver")
+  list(APPEND CMAKE_ABSOLUTE_DESTINATION_FILES
+   "/home/rohith-ramanan/main/jssp_solver")
+  if(CMAKE_WARN_ON_ABSOLUTE_INSTALL_DESTINATION)
+    message(WARNING "ABSOLUTE path INSTALL DESTINATION : ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
+  endif()
+  if(CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION)
+    message(FATAL_ERROR "ABSOLUTE path INSTALL DESTINATION forbidden (by caller): ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
+  endif()
+  file(INSTALL DESTINATION "/home/rohith-ramanan/main" TYPE EXECUTABLE FILES "/home/rohith-ramanan/main/jssp_solver")
+  if(EXISTS "$ENV{DESTDIR}/home/rohith-ramanan/main/jssp_solver" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}/home/rohith-ramanan/main/jssp_solver")
     if(CMAKE_INSTALL_DO_STRIP)
-      execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/tsp_solver")
+      execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}/home/rohith-ramanan/main/jssp_solver")
     endif()
   endif()
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  include("/home/rohith-ramanan/jssp_pt/build/CMakeFiles/tsp_solver.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
+  include("/home/rohith-ramanan/main/build/CMakeFiles/jssp_solver.dir/install-cxx-module-bmi-noconfig.cmake" OPTIONAL)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)
@@ -70,5 +78,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/rohith-ramanan/jssp_pt/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/rohith-ramanan/main/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

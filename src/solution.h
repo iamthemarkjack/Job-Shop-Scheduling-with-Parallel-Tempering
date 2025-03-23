@@ -1,52 +1,53 @@
-#ifndef SOLUTION_H
-#define SOLUTION_H
+#ifndef JSSP_SOLUTION_H
+#define JSSP_SOLUTION_H
 
-#include "tsp_problem.h"
-
+#include "jssp_problem.h"
 #include <vector>
 #include <random>
 #include <memory>
+#include <map>
+#include <boost/graph/adjacency_list.hpp>
 
-/**
- * Class representing a solution (tour) for a TSP problem.
- * Provides methods for manipulating and evaluating tours.
- */
-class Solution {
+class JSSPSolution {
 public:
-    // Constructors
-    Solution();
-    Solution(const TSPProblem& problem);
+    JSSPSolution();
+    JSSPSolution(const JSSPProblem& problem);
+    ~JSSPSolution();
     
-    // Initialize with a random tour
-    void randomize(std::mt19937& rng);
+    JSSPSolution(const JSSPSolution& other);
+    JSSPSolution& operator=(const JSSPSolution& other);
     
-    // Apply a random move operator to modify the solution
-    void applyRandomMove(std::mt19937& rng);
+    void randomize(std::mt19937_64& rng);
     
-    // Get the tour cost (total distance)
-    double getCost() const { return cost; }
+    JSSPSolution generateNeighbor(std::mt19937_64& rng) const;
     
-    // Get the tour
-    const std::vector<int>& getTour() const { return tour; }
+    int getMakespan() const { return makespan; }
     
-    // Set a specific tour
-    void setTour(const std::vector<int>& newTour);
-    
-    // Check if the solution is valid
-    bool isValid() const;
-
+    const std::vector<std::vector<int>>& getMachineJobOrder() const { return machineJobOrder; }
+        
 private:
-    const TSPProblem* problem;
-    std::vector<int> tour;
-    double cost;
+    typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS, 
+                                  boost::property<boost::vertex_name_t, Operation>,
+                                  boost::property<boost::edge_weight_t, int>> Graph;
+    typedef boost::graph_traits<Graph>::vertex_descriptor Vertex;
+    typedef boost::graph_traits<Graph>::edge_descriptor Edge;
     
-    // Different move operators
-    void twoOpt(int i, int j);
-    void insertMove(int removePos, int insertPos);
-    void swapMove(int i, int j);
+    const JSSPProblem* problem;
+    std::vector<std::vector<int>> machineJobOrder; // For each machine, the order of jobs
+    int makespan;
     
-    // Recalculate the cost after changes
-    void updateCost();
+    // Graph representation
+    Graph* precedenceGraph;
+    Vertex sourceVertex;
+    Vertex sinkVertex;
+    std::map<std::pair<int, int>, Vertex> operationVertices; // Maps (job, index) to vertex
+    
+    void buildGraph();
+    void updateGraph();
+    void updateMakespan();
+    int calculateMakespan();
+    
+    bool hasCycle() const;
 };
 
-#endif // SOLUTION_H
+#endif // JSSP_SOLUTION_H

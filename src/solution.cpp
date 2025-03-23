@@ -1,167 +1,323 @@
 #include "solution.h"
-
 #include <algorithm>
 #include <stdexcept>
 #include <iostream>
 #include <cassert>
 #include <unordered_set>
+#include <queue>
+#include <boost/graph/depth_first_search.hpp>
+#include <boost/graph/topological_sort.hpp>
 
-Solution::Solution() : problem(nullptr), cost(0.0) {
+struct cycle_detector : public boost::dfs_visitor<> {
+    cycle_detector(bool& has_cycle) : has_cycle(has_cycle) {}
+    
+    template <class Edge, class Graph>
+    void back_edge(Edge, const Graph&) {
+        has_cycle = true;
+    }
+    
+private:
+    bool& has_cycle;
+};
+
+JSSPSolution::JSSPSolution() 
+    : problem(nullptr), makespan(0), precedenceGraph(nullptr) {
 }
 
-Solution::Solution(const TSPProblem& problem) : problem(&problem), cost(0.0) {
-    int numCities = problem.getNumCities();
-    tour.resize(numCities);
+JSSPSolution::JSSPSolution(const JSSPProblem& problem) 
+    : problem(&problem), makespan(0), precedenceGraph(new Graph()) {
     
-    // Initialize with identity permutation
-    for (int i = 0; i < numCities; ++i) {
-        tour[i] = i;
-    }
+    int numMachines = problem.getNumMachines();
+    int numJobs = problem.getNumJobs();
     
-    updateCost();
-}
-
-void Solution::randomize(std::mt19937& rng) {
-    if (!problem) {
-        throw std::runtime_error("Solution not associated with a TSP problem");
-    }
+    machineJobOrder.resize(numMachines);
     
-    // Initialize with sequential order
-    int numCities = problem->getNumCities();
-    tour.resize(numCities);
-    for (int i = 0; i < numCities; ++i) {
-        tour[i] = i;
-    }
-    
-    // Shuffle the tour
-    std::shuffle(tour.begin(), tour.end(), rng);
-    
-    // Update the cost
-    updateCost();
-}
-
-void Solution::applyRandomMove(std::mt19937& rng) {
-    if (!problem) {
-        throw std::runtime_error("Solution not associated with a TSP problem");
-    }
-    
-    int numCities = problem->getNumCities();
-    
-    // Choose a random move type: 0 = 2-opt, 1 = insertion, 2 = swap
-    std::uniform_int_distribution<int> moveTypeDist(0, 2);
-    int moveType = moveTypeDist(rng);
-    
-    std::uniform_int_distribution<int> cityDist(0, numCities - 1);
-    
-    switch (moveType) {
-        case 0: {  // 2-opt
-            int i = cityDist(rng);
-            int j = cityDist(rng);
-            while (i == j) {
-                j = cityDist(rng);
+    for (int m = 0; m < numMachines; ++m) {
+        std::vector<int> jobsOnMachine;
+        for (int j = 0; j < numJobs; ++j) {
+            bool usesThisMachine = false;
+            for (const auto& op : problem.getJobs()[j]) {
+                if (op.machine == m) {
+                    usesThisMachine = true;
+                    break;
+                }
             }
-            if (i > j) std::swap(i, j);
-            twoOpt(i, j);
-            break;
-        }
-        case 1: {  // Insertion
-            int removePos = cityDist(rng);
-            int insertPos = cityDist(rng);
-            while (removePos == insertPos) {
-                insertPos = cityDist(rng);
+            if (usesThisMachine) {
+                jobsOnMachine.push_back(j);
             }
-            insertMove(removePos, insertPos);
-            break;
         }
-        case 2: {  // Swap
-            int i = cityDist(rng);
-            int j = cityDist(rng);
-            while (i == j) {
-                j = cityDist(rng);
-            }
-            swapMove(i, j);
-            break;
-        }
+        machineJobOrder[m] = jobsOnMachine;
     }
     
-    // Update the tour cost
-    updateCost();
+    buildGraph();
+    updateMakespan();
 }
 
-void Solution::setTour(const std::vector<int>& newTour) {
-    if (!problem) {
-        throw std::runtime_error("Solution not associated with a TSP problem");
-    }
-    
-    if (newTour.size() != problem->getNumCities()) {
-        throw std::invalid_argument("Tour size doesn't match problem size");
-    }
-    
-    // Check if all cities are present exactly once
-    std::unordered_set<int> cities;
-    for (int city : newTour) {
-        if (city < 0 || city >= problem->getNumCities()) {
-            throw std::invalid_argument("Invalid city index in tour");
-        }
-        cities.insert(city);
-    }
-    
-    if (cities.size() != problem->getNumCities()) {
-        throw std::invalid_argument("Tour must visit each city exactly once");
-    }
-    
-    tour = newTour;
-    updateCost();
+JSSPSolution::~JSSPSolution() {
+    delete precedenceGraph;
 }
 
-bool Solution::isValid() const {
+JSSPSolution::JSSPSolution(const JSSPSolution& other)
+    : problem(other.problem), 
+      machineJobOrder(other.machineJobOrder), 
+      makespan(other.makespan),
+      precedenceGraph(nullptr) {
+    
+    if (problem) {
+        precedenceGraph = new Graph();
+        buildGraph();
+    }
+}
+
+JSSPSolution& JSSPSolution::operator=(const JSSPSolution& other) {
+    if (this != &other) {
+        delete precedenceGraph;
+        
+        problem = other.problem;
+        machineJobOrder = other.machineJobOrder;
+        makespan = other.makespan;
+        
+        precedenceGraph = nullptr;
+        
+        if (problem) {
+            precedenceGraph = new Graph();
+            buildGraph();
+        }
+    }
+    return *this;
+}
+
+void JSSPSolution::randomize(std::mt19937_64& rng) {
     if (!problem) {
+        throw std::runtime_error("Solution not associated with a JSSP problem");
+    }
+    
+    int numMachines = problem->getNumMachines();
+    
+    for (int m = 0; m < numMachines; ++m) {
+        std::shuffle(machineJobOrder[m].begin(), machineJobOrder[m].end(), rng);
+    }
+    
+    updateGraph();
+    updateMakespan();
+}
+
+JSSPSolution JSSPSolution::generateNeighbor(std::mt19937_64& rng) const {
+    if (!problem) {
+        throw std::runtime_error("Solution not associated with a JSSP problem");
+    }
+    
+    JSSPSolution neighbor = *this;
+    int numMachines = problem->getNumMachines();
+    
+    std::uniform_int_distribution<int> machineDist(0, numMachines - 1);
+
+    const int MAX_ATTEMPTS = 100;
+    int attempts = 0;
+    
+    bool validNeighborFound = false;
+    
+    while (!validNeighborFound && attempts < MAX_ATTEMPTS) {        
+        attempts++;
+        neighbor = *this;
+        
+        int machine = machineDist(rng);
+        
+        std::uniform_int_distribution<int> posDist(0, neighbor.machineJobOrder[machine].size() - 2);
+        int pos = posDist(rng);
+        
+        std::swap(neighbor.machineJobOrder[machine][pos], neighbor.machineJobOrder[machine][pos + 1]);
+        
+        neighbor.updateGraph();
+        
+        if (!neighbor.hasCycle()) {
+            neighbor.updateMakespan();
+            validNeighborFound = true;
+        }
+    }
+    
+    if (!validNeighborFound) {
+        return *this;
+    }
+    
+    return neighbor;
+}
+
+void JSSPSolution::buildGraph() {
+    if (!problem) {
+        throw std::runtime_error("Solution not associated with a JSSP problem");
+    }
+    
+    if (precedenceGraph) {
+        delete precedenceGraph;
+    }
+    
+    precedenceGraph = new Graph();
+    operationVertices.clear();
+    
+    sourceVertex = boost::add_vertex(*precedenceGraph);
+    sinkVertex = boost::add_vertex(*precedenceGraph);
+    
+    for (int i = 0; i < problem->getNumJobs(); ++i) {
+        for (const auto& op : problem->getJobs()[i]) {
+            Vertex v = boost::add_vertex(*precedenceGraph);
+            boost::put(boost::vertex_name, *precedenceGraph, v, op);
+            operationVertices[{op.job, op.index}] = v;
+        }
+    }
+    
+    for (int i = 0; i < problem->getNumJobs(); ++i) {
+        Vertex firstOp = operationVertices[{i, 0}];
+        Edge e = boost::add_edge(sourceVertex, firstOp, *precedenceGraph).first;
+        boost::put(boost::edge_weight, *precedenceGraph, e, 0);
+        
+        for (int j = 0; j < problem->getNumMachines() - 1; ++j) {
+            Vertex u = operationVertices[{i, j}];
+            Vertex v = operationVertices[{i, j + 1}];
+            Operation uOp = boost::get(boost::vertex_name, *precedenceGraph, u);
+            
+            Edge e = boost::add_edge(u, v, *precedenceGraph).first;
+            boost::put(boost::edge_weight, *precedenceGraph, e, uOp.duration);
+        }
+        
+        Vertex lastOp = operationVertices[{i, problem->getNumMachines() - 1}];
+        Operation lastOpData = boost::get(boost::vertex_name, *precedenceGraph, lastOp);
+        e = boost::add_edge(lastOp, sinkVertex, *precedenceGraph).first;
+        boost::put(boost::edge_weight, *precedenceGraph, e, lastOpData.duration);
+    }
+    
+    updateGraph();
+}
+
+void JSSPSolution::updateGraph() {
+    if (!precedenceGraph || !problem) {
+        return;
+    }
+    
+    std::vector<Edge> edgesToRemove;
+    boost::graph_traits<Graph>::edge_iterator ei, ei_end;
+    for (boost::tie(ei, ei_end) = boost::edges(*precedenceGraph); ei != ei_end; ++ei) {
+        Vertex u = boost::source(*ei, *precedenceGraph);
+        Vertex v = boost::target(*ei, *precedenceGraph);
+        
+        if (u == sourceVertex || v == sinkVertex) {
+            continue;
+        }
+        
+        if (u != sourceVertex && v != sinkVertex) {
+            Operation uOp = boost::get(boost::vertex_name, *precedenceGraph, u);
+            Operation vOp = boost::get(boost::vertex_name, *precedenceGraph, v);
+            
+            if (uOp.job != vOp.job) {
+                edgesToRemove.push_back(*ei);
+            }
+        }
+    }
+    
+    for (const auto& edge : edgesToRemove) {
+        boost::remove_edge(edge, *precedenceGraph);
+    }
+    
+    for (int m = 0; m < problem->getNumMachines(); ++m) {
+        const auto& jobOrder = machineJobOrder[m];
+        
+        for (size_t i = 0; i < jobOrder.size() - 1; ++i) {
+            int job1 = jobOrder[i];
+            int job2 = jobOrder[i + 1];
+            
+            Vertex op1Vertex;
+            Vertex op2Vertex;
+            bool foundOp1 = false;
+            bool foundOp2 = false;
+            
+            for (int opIdx = 0; opIdx < problem->getJobs()[job1].size(); ++opIdx) {
+                if (problem->getJobs()[job1][opIdx].machine == m) {
+                    op1Vertex = operationVertices[{job1, opIdx}];
+                    foundOp1 = true;
+                    break;
+                }
+            }
+            
+            for (int opIdx = 0; opIdx < problem->getJobs()[job2].size(); ++opIdx) {
+                if (problem->getJobs()[job2][opIdx].machine == m) {
+                    op2Vertex = operationVertices[{job2, opIdx}];
+                    foundOp2 = true;
+                    break;
+                }
+            }
+            
+            if (foundOp1 && foundOp2) {
+                Operation op1 = boost::get(boost::vertex_name, *precedenceGraph, op1Vertex);
+                Edge e = boost::add_edge(op1Vertex, op2Vertex, *precedenceGraph).first;
+                boost::put(boost::edge_weight, *precedenceGraph, e, op1.duration);
+            }
+        }
+    }
+}
+
+void JSSPSolution::updateMakespan() {
+    makespan = calculateMakespan();
+}
+
+int JSSPSolution::calculateMakespan() {
+    if (!precedenceGraph || !problem) {
+        throw std::runtime_error("Solution not properly initialized");
+    }
+    
+    if (hasCycle()) {
+        return std::numeric_limits<int>::max();
+    }
+    
+    size_t numVertices = boost::num_vertices(*precedenceGraph);
+    
+    std::vector<int> earliestStart(numVertices, 0);
+    std::vector<int> inDegree(numVertices, 0);
+    
+    boost::graph_traits<Graph>::edge_iterator ei, ei_end;
+    for (boost::tie(ei, ei_end) = boost::edges(*precedenceGraph); ei != ei_end; ++ei) {
+        Vertex v = boost::target(*ei, *precedenceGraph);
+        inDegree[v]++;
+    }
+    
+    std::queue<Vertex> q;
+    
+    q.push(sourceVertex);
+    
+    while (!q.empty()) {
+        Vertex u = q.front();
+        q.pop();
+        
+        boost::graph_traits<Graph>::out_edge_iterator ei, ei_end;
+        for (boost::tie(ei, ei_end) = boost::out_edges(u, *precedenceGraph); ei != ei_end; ++ei) {
+            Vertex v = boost::target(*ei, *precedenceGraph);
+            int weight = boost::get(boost::edge_weight, *precedenceGraph, *ei);
+            
+            earliestStart[v] = std::max(earliestStart[v], earliestStart[u] + weight);
+            inDegree[v]--;
+            if (inDegree[v] == 0) {
+                q.push(v);
+            }
+        }
+    }
+    
+    return earliestStart[sinkVertex];
+}
+
+bool JSSPSolution::hasCycle() const {
+    if (!precedenceGraph) {
         return false;
     }
     
-    if (tour.size() != problem->getNumCities()) {
-        return false;
-    }
+    bool has_cycle = false;
+    std::vector<boost::default_color_type> color_map(boost::num_vertices(*precedenceGraph));
     
-    std::unordered_set<int> cities;
-    for (int city : tour) {
-        if (city < 0 || city >= problem->getNumCities()) {
-            return false;
-        }
-        cities.insert(city);
-    }
+    boost::depth_first_search(
+        *precedenceGraph,
+        boost::visitor(cycle_detector(has_cycle))
+        .color_map(boost::make_iterator_property_map(
+            color_map.begin(),
+            boost::get(boost::vertex_index, *precedenceGraph)))
+    );
     
-    return cities.size() == problem->getNumCities();
-}
-
-void Solution::twoOpt(int i, int j) {
-    // Reverse the segment between positions i and j
-    std::reverse(tour.begin() + i, tour.begin() + j + 1);
-}
-
-void Solution::insertMove(int removePos, int insertPos) {
-    int city = tour[removePos];
-    
-    // Remove city from its current position
-    tour.erase(tour.begin() + removePos);
-    
-    // Adjust insert position if it was after remove position
-    if (insertPos > removePos) {
-        insertPos--;
-    }
-    
-    // Insert city at new position
-    tour.insert(tour.begin() + insertPos, city);
-}
-
-void Solution::swapMove(int i, int j) {
-    std::swap(tour[i], tour[j]);
-}
-
-void Solution::updateCost() {
-    if (!problem) {
-        throw std::runtime_error("Solution not associated with a TSP problem");
-    }
-    
-    cost = problem->calculateTourLength(tour);
+    return has_cycle;
 }

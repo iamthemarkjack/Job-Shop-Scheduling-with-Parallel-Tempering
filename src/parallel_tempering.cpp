@@ -6,343 +6,212 @@
 #include <fstream>
 #include <map>
 
-// Implementation of AdaptiveParallelTempering
-
-AdaptiveParallelTempering::AdaptiveParallelTempering(const TSPProblem& problem, 
-                                              int initialReplicas,
-                                              double minTemp,
-                                              double maxTemp,
-                                              int swapInterval,
-                                              int maxIterations,
-                                              double targetSAP,
-                                              double initialAlpha,
-                                              double t0)
-    : problem(problem), 
-      numReplicas(initialReplicas),
+AdaptiveParallelTempering::AdaptiveParallelTempering(const JSSPProblem& problem,
+                                                    int numReplicas,
+                                                    double minTemp,
+                                                    double rho,
+                                                    int maxIterations,
+                                                    double target_SAP,
+                                                    double C,
+                                                    double eta,
+                                                    std::string hisPrefix)
+    : problem(problem),
+      numReplicas(numReplicas),
       minTemp(minTemp),
-      maxTemp(maxTemp),
-      swapInterval(swapInterval),
+      rho(rho),
       maxIterations(maxIterations),
-      targetSAP(targetSAP),
-      alpha(initialAlpha),
-      alpha0(initialAlpha),
-      t0(t0),
-      totalSwapAttempts(0),
-      thresholdDrop(0.05),
-      thresholdInsert(0.05) {
-    
-    // Set default number of threads to number of replicas if not overridden later
-    numThreads = numReplicas;
-    
-    // Initialize RNG pool (one per thread)
+      target_SAP(target_SAP),
+      C(C),
+      eta(eta),
+      hisPrefix(hisPrefix) {
+
     unsigned seed = std::random_device{}();
-    for (int i = 0; i < numReplicas; ++i) {
-        rngPool.emplace_back(seed + i);  // Different seed for each thread
+    for (int i = 0; i < numReplicas; ++i){
+        rngPool.emplace_back(seed + i);
     }
-    
-    // Initialize temperatures and replicas
-    initializeTemperatures();
-    initializeReplicas();
-    
-    // Initialize swap statistics
-    acceptedSwaps.resize(numReplicas - 1, 0);
-    attemptedSwaps.resize(numReplicas - 1, 0);
-    swapAcceptanceProbabilities.resize(numReplicas - 1, 0.0);
-}
 
-void AdaptiveParallelTempering::initializeTemperatures() {
-    temperatures.resize(numReplicas);
-    
-    // Geometric progression from minTemp to maxTemp
-    double ratio = std::pow(maxTemp / minTemp, 1.0 / (numReplicas - 1));
-    
-    for (int i = 0; i < numReplicas; ++i) {
-        temperatures[i] = minTemp * std::pow(ratio, i);
-    }
-}
-
-void AdaptiveParallelTempering::initializeReplicas() {
     replicas.resize(numReplicas);
+
+    rhos.resize(numReplicas - 1, rho);
+    betas.resize(numReplicas, 1 / minTemp);
+
+    attemptedSwaps.resize(numReplicas - 1, 0);
+    acceptedSwaps.resize(numReplicas - 1, 0);
+    ratios.resize(numReplicas - 1, 0.0);
+
+    betaHistory.resize(numReplicas);
+    energyHistory.resize(numReplicas);
+    SAPHistory.resize(numReplicas - 1);
+
+    initialize();
+}
+
+void AdaptiveParallelTempering::initialize(){
+    for(int i = 1; i < numReplicas; ++i){
+        betas[i] = betas[i - 1] / 10.0;
+    }
     
-    // Create random initial solutions for each replica
-    for (int i = 0; i < numReplicas; ++i) {
-        replicas[i] = Solution(problem);
+    for (int i = 0; i < numReplicas; ++i){
+        replicas[i] = JSSPSolution(problem);
         replicas[i].randomize(rngPool[i]);
     }
 }
 
-void AdaptiveParallelTempering::metropolisStep(Solution& solution, double temperature, std::mt19937& rng) {
-    // Create a candidate solution by applying a random move
-    Solution candidate = solution;
-    
-    // Apply a random move
-    candidate.applyRandomMove(rng);
-    
-    // Calculate the cost difference
-    double currentCost = solution.getCost();
-    double candidateCost = candidate.getCost();
+void AdaptiveParallelTempering::metropolisStep(JSSPSolution& solution, double beta, std::mt19937_64& rng){
+    JSSPSolution candidate = solution;
+    candidate.generateNeighbor(rng);
+
+    double currentCost = solution.getMakespan();
+    double candidateCost = candidate.getMakespan();
     double delta = candidateCost - currentCost;
-    
-    // Accept or reject the move based on Metropolis criterion
-    if (delta <= 0) {
-        // Always accept if the new solution is better
-        solution = candidate;
-    } else {
-        // Accept with probability exp(-delta/T) if the new solution is worse
-        std::uniform_real_distribution<double> dist(0.0, 1.0);
-        if (dist(rng) < std::exp(-delta / temperature)) {
-            solution = candidate;
-        }
-    }
-}
 
-double AdaptiveParallelTempering::calculateSwapAcceptance(const Solution& replica1, const Solution& replica2, 
-    double temp1, double temp2) {
-    // Calculate the energy (cost) difference
-    double energy1 = replica1.getCost();
-    double energy2 = replica2.getCost();
-
-    // Calculate the Metropolis criterion for replica exchange
-    double deltaE = (1.0 / temp1 - 1.0 / temp2) * (energy1 - energy2);
-
-    // Return the acceptance probability
-    return std::min(1.0, std::exp(deltaE));
-}
-
-void AdaptiveParallelTempering::attemptSwaps() {
-    // Random number generator for swap decisions
-    std::random_device rd;
-    std::mt19937 rng(rd());
     std::uniform_real_distribution<double> dist(0.0, 1.0);
-    
-    // Swap only between adjacent temperatures
-    for (int i = 0; i < numReplicas - 1; ++i) {
-        totalSwapAttempts++;
-        attemptedSwaps[i]++;
-        
-        double acceptProb = calculateSwapAcceptance(
-            replicas[i], replicas[i+1], 
-            temperatures[i], temperatures[i+1]
-        );
-        
-        if (dist(rng) < acceptProb) {
-            // Accept swap
-            std::swap(replicas[i], replicas[i+1]);
-            acceptedSwaps[i]++;
-        }
+    if (dist(rng) < std::min(1.0, std::exp(-delta * beta))){
+        solution = candidate;
     }
 }
 
-void AdaptiveParallelTempering::updateSAPs() {
-    // Update swap acceptance probabilities
-    for (int i = 0; i < numReplicas - 1; ++i) {
-        if (attemptedSwaps[i] > 0) {
-            swapAcceptanceProbabilities[i] = static_cast<double>(acceptedSwaps[i]) / attemptedSwaps[i];
-        }
+double AdaptiveParallelTempering::calculateSAP(const JSSPSolution& replica1, const JSSPSolution& replica2, double beta1, double beta2){
+    double E1 = replica1.getMakespan();
+    double E2 = replica2.getMakespan();
+
+    double exponent = (beta1 - beta2) * (E1 - E2);
+
+    return std::min(1.0 , std::exp(exponent));
+}
+
+void AdaptiveParallelTempering::attemptSwap(){
+    std::random_device rd;
+    std::mt19937_64 rng(rd());
+    std::uniform_int_distribution<int> int_dist(0, numReplicas - 2);
+    std::uniform_real_distribution<double> real_dist(0.0, 1.0);
+
+    int k = int_dist(rng);
+
+    double acceptProb = calculateSAP(replicas[k], replicas[k + 1], betas[k], betas[k + 1]);
+    attemptedSwaps[k]++;
+
+    if (real_dist(rng) < acceptProb){
+        std::swap(replicas[k], replicas[k + 1]);
+        acceptedSwaps[k]++;
+    }
+
+    for (int i = 0; i < numReplicas - 1; ++i){
+        double val = attemptedSwaps[i] > 0 ? static_cast<double>(acceptedSwaps[i]) / attemptedSwaps[i] : 0.0;
+        ratios[i] = val;
     }
 }
 
-void AdaptiveParallelTempering::updateDampingFactor() {
-    // Update damping factor according to equation (5)
-    alpha = alpha0 * (t0 / (t0 + totalSwapAttempts));
-}
-
-void AdaptiveParallelTempering::adjustTemperatures() {
-    // Implement Algorithm 1 from the paper
-    std::vector<double> newTemperatures = temperatures;
-    
-    for (int i = 0; i < numReplicas - 1; ++i) {
-        // Calculate gap between actual SAP and target SAP
-        double gap = swapAcceptanceProbabilities[i] - targetSAP;
-        
-        if (gap > 0) {
-            // SAP is too high, increase temperature difference
-            double deltaT = (temperatures[i+1] - temperatures[i]) * alpha;
-            newTemperatures[i+1] += deltaT;
-        } else if (gap < 0) {
-            // SAP is too low, decrease temperature difference
-            double deltaT = (temperatures[i+1] - temperatures[i]) * alpha;
-            newTemperatures[i+1] -= deltaT;
-        }
+void AdaptiveParallelTempering::updateBetas(int iteration){
+    for (int i = 0; i < numReplicas - 1; ++i){
+        double SAP = calculateSAP(replicas[i], replicas[i + 1], betas[i], betas[i + 1]);
+        rhos[i] += gamma(iteration) * (target_SAP - SAP);
     }
-    
-    // Update temperatures
-    temperatures = newTemperatures;
-}
 
-void AdaptiveParallelTempering::manageReplicas() {
-    // Check if we need to drop or insert replicas
-    
-    // If numReplicas < 2, we can't perform any more operations
-    if (numReplicas < 2) return;
-    
-    // Get SAP between the two highest temperatures
-    double highestSAP = swapAcceptanceProbabilities[numReplicas - 2];
-    
-    if (highestSAP > targetSAP + thresholdDrop) {
-        // Drop the highest temperature replica
-        temperatures.pop_back();
-        replicas.pop_back();
-        acceptedSwaps.pop_back();
-        attemptedSwaps.pop_back();
-        swapAcceptanceProbabilities.pop_back();
-        numReplicas--;
-        
-        std::cout << "Dropped replica. New count: " << numReplicas << std::endl;
-    } 
-    else if (highestSAP < targetSAP - thresholdInsert) {
-        // Insert new replica between two highest temperatures
-        double newTemp = 0.5 * (temperatures[numReplicas-1] + temperatures[numReplicas-2]);
-        temperatures.push_back(newTemp);
-        
-        // Create new replica by cloning the second highest one
-        replicas.push_back(replicas[numReplicas-2]);
-        
-        // Initialize statistics for the new pair
-        acceptedSwaps.push_back(0);
-        attemptedSwaps.push_back(0);
-        swapAcceptanceProbabilities.push_back(0.0);
-        
-        numReplicas++;
-        
-        std::cout << "Inserted replica. New count: " << numReplicas << std::endl;
+    for (int i = 0; i < numReplicas - 1; ++i){
+        betas[i + 1] = betas[i] * (1 / (1 + std::exp( -rhos[i])));
+
     }
 }
 
-Solution AdaptiveParallelTempering::solve(const std::string& historyFilename) {
-    // Set the number of OpenMP threads
-    omp_set_num_threads(numThreads);
+double AdaptiveParallelTempering::gamma(int t){
+    return C * std::pow(1 + t, -eta);
+}
 
-    // Main algorithm loop
+JSSPSolution AdaptiveParallelTempering::solve() {
     int iteration = 0;
     
     while (iteration < maxIterations) {
-        // Run MCMC steps for each replica in parallel
-        #pragma omp parallel for num_threads(numThreads)
         for (int i = 0; i < numReplicas; ++i) {
-            int threadId = omp_get_thread_num();
-            
-            // For each iteration, perform multiple Metropolis steps
-            // to ensure good mixing at that temperature
-            for (int step = 0; step < 100; step++) {
-                metropolisStep(replicas[i], temperatures[i], rngPool[threadId]);
-            }
+            metropolisStep(replicas[i], betas[i], rngPool[i]);
         }
         
-        // Attempt swaps between adjacent temperatures
-        #pragma omp critical
-        {
-            attemptSwaps();
-        }
-        
-        // Every N_swap iterations, adjust temperatures and manage replicas
-        if (iteration % swapInterval == 0 && iteration > 0) {
-            updateSAPs();
-            updateDampingFactor();
-            adjustTemperatures();
-            // manageReplicas();
+        attemptSwap();
+        updateBetas(iteration);
+
+        iteration += 1;
+
+        for (int i = 0; i < numReplicas; ++i) {
+            betaHistory[i].push_back(betas[i]);
+            energyHistory[i].push_back(replicas[i].getMakespan());
+            if (i < numReplicas - 1) SAPHistory[i].push_back(ratios[i]);
         }
 
-        // Record the current state
-        recordCurrentState(iteration);
-
-        // Add progress reporting
         if (iteration % (maxIterations / 10) == 0) {
             std::cout << "Iteration " << iteration << "/" << maxIterations 
-                      << ", Best solution: " << replicas[0].getCost() << std::endl;
+                      << ", best solution: " << replicas[0].getMakespan() << std::endl;
         }
-        
-        iteration++;
     }
 
-    // Save history to file if filename is provided
-    if (!historyFilename.empty()) {
-        saveHistoryToFile(historyFilename);
+    std::cout << "Final Rho : ";
+    for (double rho_val : rhos){
+        std::cout <<  rho_val << " ";
     }
-    
-    // Return the best solution
-    Solution bestSolution = replicas[0];
-    double bestCost = bestSolution.getCost();
-    
+    std::cout << std::endl;
+
+    saveHistory(hisPrefix);
+        
+    JSSPSolution bestSolution = replicas[0];
+    double bestCost = bestSolution.getMakespan();
     for (int i = 1; i < numReplicas; ++i) {
-        double cost = replicas[i].getCost();
+        double cost = replicas[i].getMakespan();
         if (cost < bestCost) {
             bestCost = cost;
             bestSolution = replicas[i];
         }
     }
-    
     return bestSolution;
 }
 
-void AdaptiveParallelTempering::recordCurrentState(int iteration) {
-    // Record the current temperatures
-    temperatureHistory.push_back(temperatures);
-    
-    // Record current energies
-    std::vector<double> currentEnergies;
-    for (int i = 0; i < numReplicas ; ++i){
-        currentEnergies.push_back(replicas[i].getCost());
+void AdaptiveParallelTempering::saveHistory(const std::string& prefix) const {
+    // Save beta history
+    std::ofstream betaFile("histories/" + prefix + "_beta_history.csv");
+    betaFile << "Iteration";
+    for (int i = 0; i < numReplicas; ++i) {
+        betaFile << ",Replica" << i;
     }
-    energyHistory.push_back(currentEnergies);
-
-    // Record the current SAPs
-    if (iteration % swapInterval == 0 && iteration > 0) {
-        sapHistory.push_back(swapAcceptanceProbabilities);
-        iterationHistory.push_back(iteration);
-    }
-}
-
-void AdaptiveParallelTempering::saveHistoryToFile(const std::string& filename) const {
-    std::ofstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << " for writing." << std::endl;
-        return;
-    }
+    betaFile << std::endl;
     
-    // Write header
-    // file << "Iteration,ReplicaIndex,Temperature,Energy,SAP" << std::endl;
-    file << "Iteration,ReplicaIndex,Temperature,Energy" << std::endl;
-    
-    // Write temperature data for all iterations
-    for (size_t i = 0; i < temperatureHistory.size(); ++i) {
-        int iteration = i; // Assuming we record every iteration
-        
-        for (size_t j = 0; j < temperatureHistory[i].size(); ++j) {
-            file << iteration << "," << j << "," << temperatureHistory[i][j] << ",";
-
-            // Write energy data
-            if (j < energyHistory[i].size()) {
-                file << energyHistory[i][j];
-            } else {
-                file << "NA"; // Shouldn't happen unless replicas were added/removed
-            }
-            
-            // // Find the corresponding SAP data
-            // if (j < numReplicas - 1) {
-            //     // Find the most recent SAP record for this iteration
-            //     int sapIndex = -1;
-            //     for (size_t k = 0; k < iterationHistory.size(); ++k) {
-            //         if (iterationHistory[k] <= iteration) {
-            //             sapIndex = k;
-            //         } else {
-            //             break; // iterationHistory should be sorted, so we can break early
-            //         }
-            //     }
-                
-            //     if (sapIndex >= 0 && j < sapHistory[sapIndex].size()) {
-            //         file << sapHistory[sapIndex][j];
-            //     } else {
-            //         file << "NA"; // No applicable SAP recorded
-            //     }
-            // } else {
-            //     file << "NA"; // For the last replica, there's no SAP
-            // }
-
-            file << std::endl;
+    for (size_t iter = 0; iter < betaHistory[0].size(); ++iter) {
+        betaFile << iter;
+        for (int i = 0; i < numReplicas; ++i) {
+            betaFile << "," << betaHistory[i][iter];
         }
+        betaFile << std::endl;
     }
+    betaFile.close();
     
-    file.close();
-    std::cout << "History data saved to " << filename << std::endl;
+    // Save energy history
+    std::ofstream energyFile("histories/" + prefix + "_energy_history.csv");
+    energyFile << "Iteration";
+    for (int i = 0; i < numReplicas; ++i) {
+        energyFile << ",Replica" << i;
+    }
+    energyFile << std::endl;
+    
+    for (size_t iter = 0; iter < energyHistory[0].size(); ++iter) {
+        energyFile << iter;
+        for (int i = 0; i < numReplicas; ++i) {
+            energyFile << "," << energyHistory[i][iter];
+        }
+        energyFile << std::endl;
+    }
+    energyFile.close();
+    
+    // Save SAP history
+    std::ofstream sapFile("histories/" + prefix + "_sap_history.csv");
+    sapFile << "Iteration";
+    for (int i = 0; i < numReplicas - 1; ++i) {
+        sapFile << ",Pair" << i << "_" << i+1;
+    }
+    sapFile << std::endl;
+    
+    for (size_t iter = 0; iter < SAPHistory[0].size(); ++iter) {
+        sapFile << iter;
+        for (int i = 0; i < numReplicas - 1; ++i) {
+            sapFile << "," << SAPHistory[i][iter];
+        }
+        sapFile << std::endl;
+    }
+    sapFile.close();
 }
