@@ -165,7 +165,7 @@ JSSPSolution AdaptiveParallelTempering::solve() {
 
 void AdaptiveParallelTempering::saveHistory(const std::string& prefix) const {
     // Save beta history
-    std::ofstream betaFile("histories/" + prefix + "_beta_history.csv");
+    std::ofstream betaFile("results/" + prefix + "_beta_history.csv");
     betaFile << "Iteration";
     for (int i = 0; i < numReplicas; ++i) {
         betaFile << ",Replica" << i;
@@ -182,7 +182,7 @@ void AdaptiveParallelTempering::saveHistory(const std::string& prefix) const {
     betaFile.close();
     
     // Save energy history
-    std::ofstream energyFile("histories/" + prefix + "_energy_history.csv");
+    std::ofstream energyFile("results/" + prefix + "_energy_history.csv");
     energyFile << "Iteration";
     for (int i = 0; i < numReplicas; ++i) {
         energyFile << ",Replica" << i;
@@ -199,7 +199,7 @@ void AdaptiveParallelTempering::saveHistory(const std::string& prefix) const {
     energyFile.close();
     
     // Save SAP history
-    std::ofstream sapFile("histories/" + prefix + "_sap_history.csv");
+    std::ofstream sapFile("results/" + prefix + "_sap_history.csv");
     sapFile << "Iteration";
     for (int i = 0; i < numReplicas - 1; ++i) {
         sapFile << ",Pair" << i << "_" << i+1;
