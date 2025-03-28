@@ -98,7 +98,7 @@ void ParallelTempering::saveHistory() const {
 }
 
 int main() {
-    ParallelTempering pt(4, 10000, 0.1);
+    ParallelTempering pt(4, 10000, 0.01);
     pt.run();
     return 0;
 }
