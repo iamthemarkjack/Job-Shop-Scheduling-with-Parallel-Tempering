@@ -1,7 +1,11 @@
-# Ignore compiled file
+# Ignore compiled files
 jssp_solver
 /neighbor_test/test
 /sap_test/test
+
+# Ignore CSV files
+sap_test/sap_history.csv
+sap_test/temp_history.csv
 
 # Ignore CMake build directory
 /build/
