@@ -112,7 +112,7 @@ JSSPSolution JSSPSolution::generateNeighbor(std::mt19937_64& rng) const {
     
     std::uniform_int_distribution<int> machineDist(0, numMachines - 1);
 
-    const int MAX_ATTEMPTS = 100;
+    const int MAX_ATTEMPTS = 1000;
     int attempts = 0;
     
     bool validNeighborFound = false;

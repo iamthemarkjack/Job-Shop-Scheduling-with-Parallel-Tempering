@@ -19,29 +19,32 @@ void printJobOrdering(const JSSPSolution& solution) {
     }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " <processing_times_file> <machines_file>" << std::endl;
+        return 1;
+    }
+
+    std::string processing_times_file = argv[1];
+    std::string machines_file = argv[2];
+
     JSSPProblem problem;
-    if (!problem.loadFromFiles("../data/instances/processing_times.txt", "../data/instances/machines.txt")) {
+    if (!problem.loadFromFiles(processing_times_file, machines_file)) {
         std::cerr << "Failed to load JSSP instance." << std::endl;
         return 1;
     }
-    
-    // Initialize the solution
+
     JSSPSolution solution(problem);
     
-    // Print initial job ordering on machines
     std::cout << "Initial job ordering on machines:" << std::endl;
     printJobOrdering(solution);
     
-    // Print initial makespan
     std::cout << "Initial Makespan: " << solution.getMakespan() << std::endl;
     
-    // Set up random number generator
     std::random_device rd;
     std::mt19937_64 rng(rd());
     
-    // Generate and evaluate 10 neighbors
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 26; ++i) {
         JSSPSolution neighbor = solution.generateNeighbor(rng);
         std::cout << "Neighbor " << i + 1 << " Makespan: " << neighbor.getMakespan() << std::endl;
         std::cout << "Job ordering:" << std::endl;
