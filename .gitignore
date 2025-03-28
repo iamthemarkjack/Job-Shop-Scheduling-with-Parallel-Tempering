@@ -1,5 +1,7 @@
 # Ignore compiled file
 jssp_solver
+/neighbor_test/test
+/sap_test/test
 
 # Ignore CMake build directory
 /build/
