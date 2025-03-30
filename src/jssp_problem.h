@@ -3,14 +3,12 @@
 
 #include <vector>
 #include <string>
-#include <unordered_map>
-#include <set>
 
+// Structure which defines our Operation
 struct Operation {
     int job;
     int machine;
     int duration;
-    int index; // Position within job
 };
 
 class JSSPProblem {
@@ -21,16 +19,16 @@ public:
     
     int getNumJobs() const { return numJobs; }
     int getNumMachines() const { return numMachines; }
-    const std::vector<std::vector<Operation>>& getJobs() const { return jobs; }
+    const std::vector<std::vector<Operation>>& getJobs() const { return jobs; } // Returns the n x m Operations
     
-    std::vector<Operation> getMachineOperations(int machine) const;
+    std::vector<Operation> getMachineOperations(int machine) const; // Returns the operations associated with the machine
 
 private:
     int numJobs;
     int numMachines;
     std::vector<std::vector<Operation>> jobs;
     
-    std::vector<std::vector<int>> readMatrix(const std::string& filename);
+    std::vector<std::vector<int>> readMatrix(const std::string& filename); // Method to read matrix from a file
 };
 
 #endif // JSSP_PROBLEM_H

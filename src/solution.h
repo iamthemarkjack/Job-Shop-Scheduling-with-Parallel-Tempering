@@ -6,41 +6,37 @@
 #include <random>
 #include <memory>
 #include <map>
-#include <boost/graph/adjacency_list.hpp>
 
 class JSSPSolution {
 public:
     JSSPSolution();
     JSSPSolution(const JSSPProblem& problem);
-    ~JSSPSolution();
+
+    JSSPSolution(const JSSPSolution& other); // Copy Constructor to create deep copy
     
-    JSSPSolution(const JSSPSolution& other);
-    JSSPSolution& operator=(const JSSPSolution& other);
-    
-    void randomize(std::mt19937_64& rng);
+    void randomize(std::mt19937_64& rng); // Randomly initialize a solution
     
     JSSPSolution generateNeighbor(std::mt19937_64& rng) const;
+
+    const std::vector<std::vector<Operation>>& getMachineJobOrders() const { return machineJobOrders; }
     
     int getMakespan() const { return makespan; }
-    
-    const std::vector<std::vector<int>>& getMachineJobOrder() const { return machineJobOrder; }
-        
+            
 private:
-    typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS, 
-                                  boost::property<boost::vertex_name_t, Operation>,
-                                  boost::property<boost::edge_weight_t, int>> Graph;
-    typedef boost::graph_traits<Graph>::vertex_descriptor Vertex;
-    typedef boost::graph_traits<Graph>::edge_descriptor Edge;
-    
-    const JSSPProblem* problem;
-    std::vector<std::vector<int>> machineJobOrder; // For each machine, the order of jobs
+    struct Vertex {
+        Operation op;
+        std::vector<std::pair<int, int>> outEdges; // (target vertex ID, weight)
+    };
+
+    const JSSPProblem* problem; // Pointer to the JSSP Problem instance
+    std::vector<std::vector<Operation>> machineJobOrders; // For each machine, the order of jobs
     int makespan;
-    
+
     // Graph representation
-    Graph* precedenceGraph;
-    Vertex sourceVertex;
-    Vertex sinkVertex;
-    std::map<std::pair<int, int>, Vertex> operationVertices; // Maps (job, index) to vertex
+    std::vector<Vertex> graph;
+    int sourceVertex;
+    int sinkVertex;
+    std::map<std::pair<int, int>, int> operationVertices; // Maps (job, index) to vertex ID
     
     void buildGraph();
     void updateGraph();
@@ -48,6 +44,8 @@ private:
     int calculateMakespan();
     
     bool hasCycle() const;
+    void topoSortUtil(int v, std::vector<bool>& visited, std::vector<int>& order) const;
+    std::vector<int> topoSort() const;
 };
 
 #endif // JSSP_SOLUTION_H
