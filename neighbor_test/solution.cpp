@@ -1,90 +1,37 @@
 #include "solution.h"
+
 #include <algorithm>
 #include <stdexcept>
-#include <iostream>
-#include <cassert>
-#include <unordered_set>
 #include <queue>
-#include <boost/graph/depth_first_search.hpp>
-#include <boost/graph/topological_sort.hpp>
-
-struct cycle_detector : public boost::dfs_visitor<> {
-    cycle_detector(bool& has_cycle) : has_cycle(has_cycle) {}
-    
-    template <class Edge, class Graph>
-    void back_edge(Edge, const Graph&) {
-        has_cycle = true;
-    }
-    
-private:
-    bool& has_cycle;
-};
 
 JSSPSolution::JSSPSolution() 
-    : problem(nullptr), makespan(0), precedenceGraph(nullptr) {
+    : problem(nullptr), makespan(0), sourceVertex(-1), sinkVertex(-1) {
 }
 
 JSSPSolution::JSSPSolution(const JSSPProblem& problem) 
-    : problem(&problem), makespan(0), precedenceGraph(new Graph()) {
+    : problem(&problem), makespan(0) {
     
     int numMachines = problem.getNumMachines();
     int numJobs = problem.getNumJobs();
     
-    machineJobOrder.resize(numMachines);
+    machineJobOrders.resize(numMachines);
     
     for (int m = 0; m < numMachines; ++m) {
-        std::vector<int> jobsOnMachine;
-        for (int j = 0; j < numJobs; ++j) {
-            bool usesThisMachine = false;
-            for (const auto& op : problem.getJobs()[j]) {
-                if (op.machine == m) {
-                    usesThisMachine = true;
-                    break;
-                }
-            }
-            if (usesThisMachine) {
-                jobsOnMachine.push_back(j);
-            }
-        }
-        machineJobOrder[m] = jobsOnMachine;
+        machineJobOrders[m] = problem.getMachineOperations(m);
     }
     
     buildGraph();
     updateMakespan();
 }
 
-JSSPSolution::~JSSPSolution() {
-    delete precedenceGraph;
-}
-
 JSSPSolution::JSSPSolution(const JSSPSolution& other)
     : problem(other.problem), 
-      machineJobOrder(other.machineJobOrder), 
+      machineJobOrders(other.machineJobOrders), 
       makespan(other.makespan),
-      precedenceGraph(nullptr) {
-    
-    if (problem) {
-        precedenceGraph = new Graph();
-        buildGraph();
-    }
-}
-
-JSSPSolution& JSSPSolution::operator=(const JSSPSolution& other) {
-    if (this != &other) {
-        delete precedenceGraph;
-        
-        problem = other.problem;
-        machineJobOrder = other.machineJobOrder;
-        makespan = other.makespan;
-        
-        precedenceGraph = nullptr;
-        
-        if (problem) {
-            precedenceGraph = new Graph();
-            buildGraph();
-        }
-    }
-    return *this;
+      graph(other.graph), 
+      sourceVertex(other.sourceVertex), 
+      sinkVertex(other.sinkVertex), 
+      operationVertices(other.operationVertices) {
 }
 
 void JSSPSolution::randomize(std::mt19937_64& rng) {
@@ -95,7 +42,7 @@ void JSSPSolution::randomize(std::mt19937_64& rng) {
     int numMachines = problem->getNumMachines();
     
     for (int m = 0; m < numMachines; ++m) {
-        std::shuffle(machineJobOrder[m].begin(), machineJobOrder[m].end(), rng);
+        std::shuffle(machineJobOrders[m].begin(), machineJobOrders[m].end(), rng);
     }
     
     updateGraph();
@@ -112,7 +59,7 @@ JSSPSolution JSSPSolution::generateNeighbor(std::mt19937_64& rng) const {
     
     std::uniform_int_distribution<int> machineDist(0, numMachines - 1);
 
-    const int MAX_ATTEMPTS = 1000;
+    const int MAX_ATTEMPTS = 100;
     int attempts = 0;
     
     bool validNeighborFound = false;
@@ -122,11 +69,15 @@ JSSPSolution JSSPSolution::generateNeighbor(std::mt19937_64& rng) const {
         neighbor = *this;
         
         int machine = machineDist(rng);
+
+        if (neighbor.machineJobOrders[machine].size() < 2) {
+            continue;
+        }
         
-        std::uniform_int_distribution<int> posDist(0, neighbor.machineJobOrder[machine].size() - 2);
+        std::uniform_int_distribution<int> posDist(0, neighbor.machineJobOrders[machine].size() - 2);
         int pos = posDist(rng);
         
-        std::swap(neighbor.machineJobOrder[machine][pos], neighbor.machineJobOrder[machine][pos + 1]);
+        std::swap(neighbor.machineJobOrders[machine][pos], neighbor.machineJobOrders[machine][pos + 1]);
         
         neighbor.updateGraph();
         
@@ -145,154 +96,161 @@ JSSPSolution JSSPSolution::generateNeighbor(std::mt19937_64& rng) const {
 
 void JSSPSolution::buildGraph() {
     if (!problem) {
-        throw std::runtime_error("Solution not associated with a JSSP problem");
+        throw std::runtime_error("Solution not associated with a JSSP Problem");
     }
-    
-    if (precedenceGraph) {
-        delete precedenceGraph;
-    }
-    
-    precedenceGraph = new Graph();
+
+    graph.clear();
     operationVertices.clear();
-    
-    sourceVertex = boost::add_vertex(*precedenceGraph);
-    sinkVertex = boost::add_vertex(*precedenceGraph);
-    
-    for (int i = 0; i < problem->getNumJobs(); ++i) {
-        for (const auto& op : problem->getJobs()[i]) {
-            Vertex v = boost::add_vertex(*precedenceGraph);
-            boost::put(boost::vertex_name, *precedenceGraph, v, op);
-            operationVertices[{op.job, op.index}] = v;
+
+    sourceVertex = 0;
+    graph.push_back(Vertex()); // Source vertex
+
+    int vertexCount = 1;
+
+    // Add operation vertices
+    for (int i = 0; i < problem->getNumJobs(); ++i){
+        for (int j = 0; j < problem->getNumMachines(); ++j){
+            Operation op = problem->getJobs()[i][j];
+            graph.push_back(Vertex());
+            graph.back().op = op;
+            operationVertices[{i, j}] = vertexCount;
+            vertexCount++;
         }
     }
-    
-    for (int i = 0; i < problem->getNumJobs(); ++i) {
-        Vertex firstOp = operationVertices[{i, 0}];
-        Edge e = boost::add_edge(sourceVertex, firstOp, *precedenceGraph).first;
-        boost::put(boost::edge_weight, *precedenceGraph, e, 0);
-        
-        for (int j = 0; j < problem->getNumMachines() - 1; ++j) {
-            Vertex u = operationVertices[{i, j}];
-            Vertex v = operationVertices[{i, j + 1}];
-            Operation uOp = boost::get(boost::vertex_name, *precedenceGraph, u);
-            
-            Edge e = boost::add_edge(u, v, *precedenceGraph).first;
-            boost::put(boost::edge_weight, *precedenceGraph, e, uOp.duration);
+
+    sinkVertex = vertexCount;
+    graph.push_back(Vertex()); // Sink vertex
+
+    // Add Conjunctive edges (source -> first op -> ... -> last op -> sink)
+    for (int i = 0; i < problem->getNumJobs(); ++i){
+        int firstOpVertex = operationVertices[{i, 0}];
+        graph[sourceVertex].outEdges.push_back({firstOpVertex, 0}); // Weight 0 from source
+
+        for (int j = 0; j < problem->getNumMachines() - 1; ++j){
+            int currVertex = operationVertices[{i, j}];
+            int nextVertex = operationVertices[{i, j + 1}];
+            int duration = graph[currVertex].op.duration;
+
+            graph[currVertex].outEdges.push_back({nextVertex, duration});
         }
-        
-        Vertex lastOp = operationVertices[{i, problem->getNumMachines() - 1}];
-        Operation lastOpData = boost::get(boost::vertex_name, *precedenceGraph, lastOp);
-        e = boost::add_edge(lastOp, sinkVertex, *precedenceGraph).first;
-        boost::put(boost::edge_weight, *precedenceGraph, e, lastOpData.duration);
+
+        int lastOpVertex = operationVertices[{i, problem->getNumMachines() - 1}];
+        int lastOpDuration = graph[lastOpVertex].op.duration;
+        graph[lastOpVertex].outEdges.push_back({sinkVertex, lastOpDuration});
     }
-    
+
     updateGraph();
 }
 
-void JSSPSolution::updateGraph() {
-    if (!precedenceGraph || !problem) {
+void JSSPSolution::updateGraph(){
+    if (problem == nullptr){
         return;
     }
-    
-    std::vector<Edge> edgesToRemove;
-    boost::graph_traits<Graph>::edge_iterator ei, ei_end;
-    for (boost::tie(ei, ei_end) = boost::edges(*precedenceGraph); ei != ei_end; ++ei) {
-        Vertex u = boost::source(*ei, *precedenceGraph);
-        Vertex v = boost::target(*ei, *precedenceGraph);
-        
-        if (u == sourceVertex || v == sinkVertex) {
-            continue;
-        }
-        
-        if (u != sourceVertex && v != sinkVertex) {
-            Operation uOp = boost::get(boost::vertex_name, *precedenceGraph, u);
-            Operation vOp = boost::get(boost::vertex_name, *precedenceGraph, v);
-            
-            if (uOp.job != vOp.job) {
-                edgesToRemove.push_back(*ei);
+
+    // Remove disjunctive edges keeping only conjunctive edges
+    for (int v = 1; v < sinkVertex; ++v){
+        auto& outEdges = graph[v].outEdges;
+        auto it = outEdges.begin();
+        while (it != outEdges.end()){
+            int target = it->first;
+            // Keep if it's sink or part of same job sequence
+            if (target == sinkVertex || (target < sinkVertex && graph[v].op.job == graph[target].op.job)){
+                ++it;
+            } else {
+                it = outEdges.erase(it);
             }
         }
     }
-    
-    for (const auto& edge : edgesToRemove) {
-        boost::remove_edge(edge, *precedenceGraph);
-    }
-    
-    for (int m = 0; m < problem->getNumMachines(); ++m) {
-        const auto& jobOrder = machineJobOrder[m];
-        
-        for (size_t i = 0; i < jobOrder.size() - 1; ++i) {
-            int job1 = jobOrder[i];
-            int job2 = jobOrder[i + 1];
-            
-            Vertex op1Vertex;
-            Vertex op2Vertex;
-            bool foundOp1 = false;
-            bool foundOp2 = false;
-            
-            for (int opIdx = 0; opIdx < problem->getJobs()[job1].size(); ++opIdx) {
-                if (problem->getJobs()[job1][opIdx].machine == m) {
-                    op1Vertex = operationVertices[{job1, opIdx}];
-                    foundOp1 = true;
-                    break;
-                }
-            }
-            
-            for (int opIdx = 0; opIdx < problem->getJobs()[job2].size(); ++opIdx) {
-                if (problem->getJobs()[job2][opIdx].machine == m) {
-                    op2Vertex = operationVertices[{job2, opIdx}];
-                    foundOp2 = true;
-                    break;
-                }
-            }
-            
-            if (foundOp1 && foundOp2) {
-                Operation op1 = boost::get(boost::vertex_name, *precedenceGraph, op1Vertex);
-                Edge e = boost::add_edge(op1Vertex, op2Vertex, *precedenceGraph).first;
-                boost::put(boost::edge_weight, *precedenceGraph, e, op1.duration);
-            }
+
+    // Adding the updated disjunctive edges
+    for (int m = 0; m < problem->getNumMachines(); ++m){
+        const auto& jobOrder = machineJobOrders[m];
+
+        for (size_t i = 0; i < jobOrder.size() - 1; ++i){
+            Operation operation1 = jobOrder[i];
+            Operation operation2 = jobOrder[i + 1];
+
+            int op1Vertex = operation1.job * problem->getNumMachines() + (operation1.machine + 1);
+            int op2Vertex = operation2.job * problem->getNumMachines() + (operation2.machine + 1);
+
+            graph[op1Vertex].outEdges.push_back({op2Vertex, operation1.duration});
         }
     }
 }
 
-void JSSPSolution::updateMakespan() {
+void JSSPSolution::updateMakespan(){
     makespan = calculateMakespan();
 }
 
-int JSSPSolution::calculateMakespan() {
-    if (!precedenceGraph || !problem) {
+int JSSPSolution::calculateMakespan(){
+    if (problem == nullptr){
         throw std::runtime_error("Solution not properly initialized");
     }
-    
-    if (hasCycle()) {
-        return std::numeric_limits<int>::max();
+
+    // Initialize longest path for all nodes
+    std::vector<int> longestPath(graph.size(), 0);
+
+    // Initialize in-degrees for all nodes
+    std::vector<int> inDegree(graph.size(), 0);
+    for (size_t u = 0; u < graph.size(); ++u){
+        for (const auto& edge: graph[u].outEdges){
+            int v = edge.first;
+            inDegree[v]++;
+        }
+    }
+
+    // Initialize the queue
+    std::queue<int> q;
+    for (size_t i = 0; i < inDegree.size(); ++i){
+        if (inDegree[i] == 0){
+            q.push(i);
+        }
     }
     
-    size_t numVertices = boost::num_vertices(*precedenceGraph);
-    
-    std::vector<int> earliestStart(numVertices, 0);
-    std::vector<int> inDegree(numVertices, 0);
-    
-    boost::graph_traits<Graph>::edge_iterator ei, ei_end;
-    for (boost::tie(ei, ei_end) = boost::edges(*precedenceGraph); ei != ei_end; ++ei) {
-        Vertex v = boost::target(*ei, *precedenceGraph);
-        inDegree[v]++;
-    }
-    
-    std::queue<Vertex> q;
-    
-    q.push(sourceVertex);
-    
-    while (!q.empty()) {
-        Vertex u = q.front();
+    while (!q.empty()){
+        int u = q.front();
         q.pop();
         
-        boost::graph_traits<Graph>::out_edge_iterator ei, ei_end;
-        for (boost::tie(ei, ei_end) = boost::out_edges(u, *precedenceGraph); ei != ei_end; ++ei) {
-            Vertex v = boost::target(*ei, *precedenceGraph);
-            int weight = boost::get(boost::edge_weight, *precedenceGraph, *ei);
-            
-            earliestStart[v] = std::max(earliestStart[v], earliestStart[u] + weight);
+        for (const auto& edge: graph[u].outEdges){
+            int v = edge.first;
+            int weight = edge.second;
+
+            longestPath[v] = std::max(longestPath[v], longestPath[u] + weight);
+            inDegree[v]--;
+
+            if (inDegree[v] == 0){
+                q.push(v);
+            }
+        }
+    }
+
+    return longestPath[sinkVertex];
+}
+
+bool JSSPSolution::hasCycle() const {    
+    std::vector<int> inDegree(graph.size(), 0);
+    for (size_t u = 0; u < graph.size(); ++u) {
+        for (const auto& edge : graph[u].outEdges) {
+            int v = edge.first;
+            inDegree[v]++;
+        }
+    }
+    
+    std::queue<int> q;
+    for (size_t i = 0; i < inDegree.size(); ++i) {
+        if (inDegree[i] == 0) {
+            q.push(i);
+        }
+    }
+    
+    int count = 0;
+    while (!q.empty()) {
+        int u = q.front();
+        q.pop();
+        count++;
+        
+        for (const auto& edge : graph[u].outEdges) {
+            int v = edge.first;
             inDegree[v]--;
             if (inDegree[v] == 0) {
                 q.push(v);
@@ -300,24 +258,6 @@ int JSSPSolution::calculateMakespan() {
         }
     }
     
-    return earliestStart[sinkVertex];
-}
-
-bool JSSPSolution::hasCycle() const {
-    if (!precedenceGraph) {
-        return false;
-    }
-    
-    bool has_cycle = false;
-    std::vector<boost::default_color_type> color_map(boost::num_vertices(*precedenceGraph));
-    
-    boost::depth_first_search(
-        *precedenceGraph,
-        boost::visitor(cycle_detector(has_cycle))
-        .color_map(boost::make_iterator_property_map(
-            color_map.begin(),
-            boost::get(boost::vertex_index, *precedenceGraph)))
-    );
-    
-    return has_cycle;
+    // If count is less than the number of vertices, there's a cycle
+    return count < graph.size();
 }

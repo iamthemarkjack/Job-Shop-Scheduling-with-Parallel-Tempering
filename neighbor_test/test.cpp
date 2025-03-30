@@ -5,13 +5,13 @@
 #include <iomanip>
 
 void printJobOrdering(const JSSPSolution& solution) {
-    const std::vector<std::vector<int>>& machineJobOrder = solution.getMachineJobOrder();
+    const std::vector<std::vector<Operation>>& machineJobOrders = solution.getMachineJobOrders();
     
-    for (size_t m = 0; m < machineJobOrder.size(); ++m) {
+    for (size_t m = 0; m < machineJobOrders.size(); ++m) {
         std::cout << "Machine " << m << ": ";
-        for (size_t j = 0; j < machineJobOrder[m].size(); ++j) {
-            std::cout << machineJobOrder[m][j];
-            if (j < machineJobOrder[m].size() - 1) {
+        for (size_t j = 0; j < machineJobOrders[m].size(); ++j) {
+            std::cout << machineJobOrders[m][j].job;
+            if (j < machineJobOrders[m].size() - 1) {
                 std::cout << " -> ";
             }
         }
@@ -40,11 +40,12 @@ int main(int argc, char* argv[]) {
     printJobOrdering(solution);
     
     std::cout << "Initial Makespan: " << solution.getMakespan() << std::endl;
+    std::cout << std::endl;
     
     std::random_device rd;
     std::mt19937_64 rng(rd());
     
-    for (int i = 0; i < 26; ++i) {
+    for (int i = 0; i < 10; ++i) {
         JSSPSolution neighbor = solution.generateNeighbor(rng);
         std::cout << "Neighbor " << i + 1 << " Makespan: " << neighbor.getMakespan() << std::endl;
         std::cout << "Job ordering:" << std::endl;

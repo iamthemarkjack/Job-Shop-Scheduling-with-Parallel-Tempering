@@ -1,14 +1,13 @@
 #include "jssp_problem.h"
+
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
 #include <iostream>
-#include <algorithm>
 
 JSSPProblem::JSSPProblem(int numJobs, int numMachines) 
     : numJobs(numJobs), numMachines(numMachines) {
     if (numJobs > 0) {
-        jobs.resize(numJobs);
+        jobs.resize(numJobs); // Size of jobs is numJobs x numMachines
     }
 }
 
@@ -25,11 +24,13 @@ bool JSSPProblem::loadFromFiles(const std::string& processingTimeFile, const std
         numJobs = processingTimes.size();
         numMachines = processingTimes[0].size();
         
+        // Check if the number of jobs match between the files
         if (machines.size() != numJobs) {
             std::cerr << "Error: Inconsistent number of jobs between files" << std::endl;
             return false;
         }
         
+        // Check if each jobs has the same number of operations equal to numMachines in both files
         for (int i = 0; i < numJobs; ++i) {
             if (processingTimes[i].size() != numMachines || machines[i].size() != numMachines) {
                 std::cerr << "Error: Inconsistent number of machines in input files" << std::endl;
@@ -40,11 +41,12 @@ bool JSSPProblem::loadFromFiles(const std::string& processingTimeFile, const std
         jobs.clear();
         jobs.resize(numJobs);
         
+        // Load the Operations onto jobs
         for (int i = 0; i < numJobs; ++i) {
             for (int j = 0; j < numMachines; ++j) {
                 int duration = processingTimes[i][j];
                 int machine = machines[i][j];
-                jobs[i].push_back({i, machine, duration, j});
+                jobs[i].push_back({i, machine, duration});
             }
         }
         
@@ -58,6 +60,7 @@ bool JSSPProblem::loadFromFiles(const std::string& processingTimeFile, const std
 std::vector<Operation> JSSPProblem::getMachineOperations(int machine) const {
     std::vector<Operation> machineOps;
     
+    // Iteration over every Operations in jobs to fetch the Operations scheduled on machine
     for (int i = 0; i < numJobs; ++i) {
         for (const auto& op : jobs[i]) {
             if (op.machine == machine) {
