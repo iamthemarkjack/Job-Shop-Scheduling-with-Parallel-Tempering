@@ -22,7 +22,7 @@ private:
     std::vector<double> solution_proximity_history;
     std::mt19937 rng;
 
-    constexpr static double TRUE_OPTIMUM = -1.92798;
+    constexpr static double TRUE_OPTIMUM = 0;
     
     double E(double x); // One dimensional Energy function
     double gamma(int t); // Decay function
@@ -43,7 +43,7 @@ AdaptiveParallelTempering::AdaptiveParallelTempering(int n_chains, int n_iter, d
     sap_history.resize(n_chains - 1);
     temp_history.resize(n_chains);
     
-    std::normal_distribution<double> norm(100.0, 10.0);
+    std::normal_distribution<double> norm(10.0, 1.0);
     for (int i = 0; i < n_chains; ++i) {
         chains[i] = norm(rng);
         if (i > 0) betas[i] = betas[i - 1] / 10.0;
@@ -51,7 +51,7 @@ AdaptiveParallelTempering::AdaptiveParallelTempering(int n_chains, int n_iter, d
 }
 
 double AdaptiveParallelTempering::E(double x) {
-    return std::sin(3*x) + std::cos(5*x) + (x*x) / 10;
+    return std::pow(x*x - 100, 2);
 }
 
 double AdaptiveParallelTempering::gamma(int t) {
@@ -117,11 +117,6 @@ void AdaptiveParallelTempering::run() {
         for (int i = 0; i < n_chains; ++i) {
             temp_history[i].push_back(1.0 / betas[i]);
         }
-
-        if (iteration % (n_iter / 10) == 0) {
-            std::cout << "Iteration " << iteration << "/" << n_iter << "\n";
-
-        }
     }
     saveHistory();
 }
@@ -169,7 +164,7 @@ void AdaptiveParallelTempering::saveHistory() const {
 }
 
 int main() {
-    AdaptiveParallelTempering pt(4, 10000, 0.01, 0.234, 2, 2.0 / 3.0);
+    AdaptiveParallelTempering pt(4, 10000, 0.01, 0.234, 0.5, 2.0 / 3.0);
     pt.run();
     return 0;
 }

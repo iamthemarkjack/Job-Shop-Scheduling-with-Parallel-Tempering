@@ -34,7 +34,7 @@ ParallelTempering::ParallelTempering(int n_chains, int n_iter, double min_temp)
     chains.resize(n_chains);
     betas.assign(n_chains, 1.0 / min_temp);
     
-    std::normal_distribution<double> norm(100.0, 10.0);
+    std::normal_distribution<double> norm(10.0, 1.0);
     for (int i = 0; i < n_chains; ++i) {
         chains[i] = norm(rng);
         if (i > 0) betas[i] = betas[i - 1] / 10.0;
@@ -42,7 +42,7 @@ ParallelTempering::ParallelTempering(int n_chains, int n_iter, double min_temp)
 }
 
 double ParallelTempering::E(double x) {
-    return std::sin(3*x) + std::cos(5*x) + (x*x) / 10;
+    return std::pow(x*x - 100, 2) + x + 10;
 }
 
 void ParallelTempering::metropolis_step(int chain_idx) {
@@ -79,10 +79,6 @@ void ParallelTempering::run() {
 
         double proximity = 1.0 / (1.0 + std::abs(E(best_solution) - TRUE_OPTIMUM));
         solution_proximity_history.push_back(proximity);
-
-        if (iteration % (n_iter / 10) == 0) {
-            std::cout << "Iteration " << iteration << "/" << n_iter << "\n";
-        }
     }
     saveHistory();
 }
