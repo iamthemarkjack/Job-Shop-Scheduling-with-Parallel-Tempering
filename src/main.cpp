@@ -16,7 +16,8 @@ void printHelp(){
     std::cout << "  --replicas <num>               Number of temperature replicas (default: 8)\n";
     std::cout << "  --min-temp <value>             Minimum temperature (default: 1.0)\n";
     std::cout << "  --rho <value>                  Initial Values of rho (default: 1.0)\n";
-    std::cout << "  --iterations <num>             Maximum iterations (default: 1000000)\n";
+    std::cout << "  --nsweep <num>                 MCMC sampling iterations before swap (default: 100)\n";
+    std::cout << "  --time <value>                 Time limit for the solver in seconds (default: 60)\n";
     std::cout << "  --target-sap <value>           Target Swap Acceptance Probability (default: 0.234)\n";
     std::cout << "  --C <value>                    The scale of the polynomial decay (default: 1)\n";
     std::cout << "  --eta <value>                  The decay rate of the polynomial decay (default : 2/3)\n";
@@ -32,7 +33,8 @@ int main(int argc, char* argv[]){
     int numReplicas = 8;
     double minTemp = 1.0;
     double rho = 1.0;
-    int maxIterations = 1000000;
+    double maxTimeSeconds = 60.0;
+    int N_sweep= 100;
     double target_SAP = 0.234;
     double C = 1;
     double eta = 2/3;
@@ -56,8 +58,10 @@ int main(int argc, char* argv[]){
             minTemp = std::stod(argv[++i]);
         } else if (arg == "--rho" && i + 1 < argc){
             rho = std::stod(argv[++i]);
-        } else if (arg == "--iterations" && i + 1 < argc){
-            maxIterations = std::stoi(argv[++i]);
+        } else if (arg == "--nsweep" && i + 1 < argc){
+            N_sweep = std::stoi(argv[++i]);
+        } else if (arg == "--time" && i + 1 < argc){
+            maxTimeSeconds = std::stod(argv[++i]);
         } else if (arg == "--target-sap" && i + 1 < argc){
             target_SAP = std::stod(argv[++i]);
         } else if (arg == "--C" && i + 1 < argc){
@@ -84,7 +88,7 @@ int main(int argc, char* argv[]){
     JSSPProblem problem;
 
     try {
-        std::cout << "Loading TSP instance from the processing times file: " << processingTimesFile << " and machines file: " << machinesFile << "\n";
+        std::cout << "Loading JSSP instance from the processing times file: " << processingTimesFile << " and machines file: " << machinesFile << "\n";
         if (!problem.loadFromFiles(processingTimesFile, machinesFile)) {
             std::cerr << "Failed to load JSSP instance." << std::endl;
             return 1;
@@ -94,17 +98,11 @@ int main(int argc, char* argv[]){
         std::cout << "Initializing parallel tempering solver with " << numReplicas << " replicas (threads).\n";
         std::cout << "Minimum Temperature: " << minTemp << "\n";
 
-        auto startTime = std::chrono::high_resolution_clock::now();
-
-        AdaptiveParallelTempering solver(problem, numReplicas, minTemp, rho, maxIterations, target_SAP, C, eta, hisPrefix);
+        AdaptiveParallelTempering solver(problem, numReplicas, minTemp, rho, maxTimeSeconds, N_sweep, target_SAP, C, eta, hisPrefix);
 
         std::cout << "Starting parallel tempering algorithm...\n";
         JSSPSolution bestSolution = solver.solve();
 
-        auto endTime = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-
-        std::cout << "Optimization completed in " << duration / 1000.0 << " seconds.\n";
         std::cout << "Best tour length: " << std::fixed << std::setprecision(2) << bestSolution.getMakespan() << "\n";
 
     } catch (const std::exception& e){

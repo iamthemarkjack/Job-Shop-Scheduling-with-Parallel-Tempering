@@ -200,9 +200,9 @@ JSSPSolution AdaptiveParallelTempering::solve() {
         }
     }
 
-    std::cout << "Final Rho values: ";
-    for (double rho_val : rhos) {
-        std::cout << rho_val << " ";
+    std::cout << "Final beta values: ";
+    for (double beta_val : betas) {
+        std::cout << beta_val << " ";
     }
     std::cout << std::endl;
     
