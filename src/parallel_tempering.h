@@ -15,7 +15,8 @@ public:
                             int numReplicas = 8,
                             double minTemp = 1.0,
                             double rho  = 1.0,
-                            int maxIterations = 1000000,
+                            double maxTimeSeconds = 60,
+                            int N_sweep = 100,
                             double target_SAP = 0.234,
                             double C = 1,
                             double eta = 2/3,
@@ -28,13 +29,19 @@ private:
         int numReplicas;
         double minTemp;
         double rho;
-        int maxIterations;
+        double maxTimeSeconds;
+        int N_sweep;
+
         double target_SAP;
         double C;
         double eta;
         std::string hisPrefix;
 
+        double bestMakespan;
+        JSSPSolution bestSolution;
+
         std::vector<JSSPSolution> replicas;
+        std::vector<JSSPSolution> bestReplicas;
         std::vector<double> rhos;
         std::vector<double> betas;
 
@@ -56,6 +63,8 @@ private:
         void attemptSwap();
 
         void updateBetas(int iteration);
+
+        void updateBestSolutions();
 
         double gamma(int iteration); // Decay function (Polynomial Decay)
 

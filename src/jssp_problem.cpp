@@ -46,7 +46,7 @@ bool JSSPProblem::loadFromFiles(const std::string& processingTimeFile, const std
             for (int j = 0; j < numMachines; ++j) {
                 int duration = processingTimes[i][j];
                 int machine = machines[i][j];
-                jobs[i].push_back({i, machine, duration});
+                jobs[i].push_back({i, j, machine, duration});
             }
         }
         

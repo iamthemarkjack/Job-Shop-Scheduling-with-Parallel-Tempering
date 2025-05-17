@@ -7,8 +7,13 @@
 // Structure which defines our Operation
 struct Operation {
     int job;
+    int jobIndex;
     int machine;
     int duration;
+
+    bool operator==(const Operation& other) const {
+        return job == other.job && jobIndex == other.jobIndex && machine == other.machine;
+    }
 };
 
 class JSSPProblem {

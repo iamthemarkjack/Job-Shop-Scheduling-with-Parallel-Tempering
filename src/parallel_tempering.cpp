@@ -5,12 +5,15 @@
 #include <iostream>
 #include <fstream>
 #include <map>
+#include <chrono>
+#include <omp.h>
 
 AdaptiveParallelTempering::AdaptiveParallelTempering(const JSSPProblem& problem,
                                                     int numReplicas,
                                                     double minTemp,
                                                     double rho,
-                                                    int maxIterations,
+                                                    double maxTimeSeconds,
+                                                    int N_sweep,
                                                     double target_SAP,
                                                     double C,
                                                     double eta,
@@ -19,18 +22,21 @@ AdaptiveParallelTempering::AdaptiveParallelTempering(const JSSPProblem& problem,
       numReplicas(numReplicas),
       minTemp(minTemp),
       rho(rho),
-      maxIterations(maxIterations),
+      maxTimeSeconds(maxTimeSeconds),
+      N_sweep(N_sweep),
       target_SAP(target_SAP),
       C(C),
       eta(eta),
       hisPrefix(hisPrefix) {
 
     unsigned seed = std::random_device{}();
+
     for (int i = 0; i < numReplicas; ++i){
         rngPool.emplace_back(seed + i);
     }
 
     replicas.resize(numReplicas);
+    bestReplicas.resize(numReplicas);
 
     rhos.resize(numReplicas - 1, rho);
     betas.resize(numReplicas, 1 / minTemp);
@@ -43,6 +49,8 @@ AdaptiveParallelTempering::AdaptiveParallelTempering(const JSSPProblem& problem,
     energyHistory.resize(numReplicas);
     SAPHistory.resize(numReplicas - 1);
 
+    bestMakespan = std::numeric_limits<double>::max();
+
     initialize();
 }
 
@@ -51,10 +59,16 @@ void AdaptiveParallelTempering::initialize(){
         betas[i] = betas[i - 1] / 10.0;
     }
     
-    for (int i = 0; i < numReplicas; ++i){
-        replicas[i] = JSSPSolution(problem);
-        replicas[i].randomize(rngPool[i]);
+    replicas[0] = JSSPSolution(problem);
+    bestReplicas[0] = replicas[0];
+
+    for (int i = 1; i < numReplicas; ++i) {
+        replicas[i] = JSSPSolution(replicas[0]);
+        bestReplicas[i] = replicas[i];
     }
+
+    bestSolution = replicas[0];
+    bestMakespan = bestSolution.getMakespan();
 }
 
 void AdaptiveParallelTempering::metropolisStep(JSSPSolution& solution, double beta, std::mt19937_64& rng){
@@ -96,20 +110,19 @@ void AdaptiveParallelTempering::attemptSwap(){
         acceptedSwaps[k]++;
     }
 
-    for (int i = 0; i < numReplicas - 1; ++i){
-        double val = attemptedSwaps[i] > 0 ? static_cast<double>(acceptedSwaps[i]) / attemptedSwaps[i] : 0.0;
-        ratios[i] = val;
-    }
+    ratios[k] = attemptedSwaps[k] > 0 ? static_cast<double>(acceptedSwaps[k]) / attemptedSwaps[k] : 0.0;
+
 }
 
 void AdaptiveParallelTempering::updateBetas(int iteration){
     for (int i = 0; i < numReplicas - 1; ++i){
         double SAP = calculateSAP(replicas[i], replicas[i + 1], betas[i], betas[i + 1]);
         rhos[i] += gamma(iteration) * (target_SAP - SAP);
+        rhos[i] = std::max(-42.0, rhos[i]);
     }
 
     for (int i = 0; i < numReplicas - 1; ++i){
-        betas[i + 1] = betas[i] * (1 / (1 + std::exp( -rhos[i])));
+        betas[i + 1] = betas[i] * (1 / (1 + std::exp( rhos[i] )));
 
     }
 }
@@ -118,48 +131,89 @@ double AdaptiveParallelTempering::gamma(int t){
     return C * std::pow(1 + t, -eta);
 }
 
+void AdaptiveParallelTempering::updateBestSolutions() {
+    #pragma omp critical
+    {
+        // Update per-replica best solutions
+        for (int i = 0; i < numReplicas; ++i) {
+            double currentMakespan = replicas[i].getMakespan();
+            double bestReplicaMakespan = bestReplicas[i].getMakespan();
+            
+            if (currentMakespan < bestReplicaMakespan) {
+                bestReplicas[i] = replicas[i];
+            }
+            
+            // Update global best solution
+            if (currentMakespan < bestMakespan) {
+                bestMakespan = currentMakespan;
+                bestSolution = replicas[i];
+            }
+        }
+    }
+}
+
+
 JSSPSolution AdaptiveParallelTempering::solve() {
     int iteration = 0;
+
+    auto startTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = startTime;
+    std::chrono::duration<double> elapsed;
     
-    while (iteration < maxIterations) {
-        for (int i = 0; i < numReplicas; ++i) {
-            metropolisStep(replicas[i], betas[i], rngPool[i]);
+    while (true) {
+         // Perform N_sweep metropolis steps in parallel for each replica
+         #pragma omp parallel for
+         for (int i = 0; i < numReplicas; ++i) {
+             for (int sweep = 0; sweep < N_sweep; ++sweep) {
+                 metropolisStep(replicas[i], betas[i], rngPool[i]);
+            }
         }
+
+        updateBestSolutions();
         
         attemptSwap();
         updateBetas(iteration);
 
         iteration += 1;
 
+        // Record history
         for (int i = 0; i < numReplicas; ++i) {
             betaHistory[i].push_back(betas[i]);
             energyHistory[i].push_back(replicas[i].getMakespan());
             if (i < numReplicas - 1) SAPHistory[i].push_back(ratios[i]);
         }
 
-        if (iteration % (maxIterations / 10) == 0) {
-            std::cout << "Iteration " << iteration << "/" << maxIterations 
-                      << ", best solution: " << replicas[0].getMakespan() << std::endl;
+        // Check time and print progress
+        currentTime = std::chrono::high_resolution_clock::now();
+        elapsed = currentTime - startTime;
+        
+        if (elapsed.count() >= maxTimeSeconds) {
+            std::cout << "Time limit reached: " << elapsed.count() 
+                      << " seconds, best solution: " << bestMakespan << std::endl;
+            break;
+        }
+        
+        if (iteration % 100 == 0) {
+            std::cout << "Iteration " << iteration 
+                      << ", elapsed time: " << elapsed.count() << "/" << maxTimeSeconds 
+                      << " seconds, best solution: " << bestMakespan << std::endl;
         }
     }
 
-    std::cout << "Final Rho : ";
-    for (double rho_val : rhos){
-        std::cout <<  rho_val << " ";
+    std::cout << "Final Rho values: ";
+    for (double rho_val : rhos) {
+        std::cout << rho_val << " ";
+    }
+    std::cout << std::endl;
+    
+    std::cout << "Best solution from each replica: ";
+    for (const auto& sol : bestReplicas) {
+        std::cout << sol.getMakespan() << " ";
     }
     std::cout << std::endl;
 
     saveHistory(hisPrefix);
-        
-    JSSPSolution bestSolution = replicas[0];
-    double bestCost = bestSolution.getMakespan();
-    for (int i = 1; i < numReplicas; ++i) {
-        double cost = replicas[i].getMakespan();
-        if (cost < bestCost) {
-            bestCost = cost;
-            bestSolution = replicas[i];
-        }
-    }
+    
     return bestSolution;
 }
 
