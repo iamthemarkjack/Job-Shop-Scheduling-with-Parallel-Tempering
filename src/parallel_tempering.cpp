@@ -52,6 +52,8 @@ AdaptiveParallelTempering::AdaptiveParallelTempering(const JSSPProblem& problem,
     bestMakespan = std::numeric_limits<double>::max();
 
     initialize();
+
+    std::cout << "PT Engine Initialization Done." << std::endl;
 }
 
 void AdaptiveParallelTempering::initialize(){
@@ -171,17 +173,20 @@ JSSPSolution AdaptiveParallelTempering::solve() {
 
         updateBestSolutions();
         
-        attemptSwap();
-        updateBetas(iteration);
+        #pragma omp critical
+        {
+            attemptSwap();
+            updateBetas(iteration);
+        }
 
         iteration += 1;
 
-        // Record history
-        for (int i = 0; i < numReplicas; ++i) {
-            betaHistory[i].push_back(betas[i]);
-            energyHistory[i].push_back(replicas[i].getMakespan());
-            if (i < numReplicas - 1) SAPHistory[i].push_back(ratios[i]);
-        }
+        // // Record history
+        // for (int i = 0; i < numReplicas; ++i) {
+        //     betaHistory[i].push_back(betas[i]);
+        //     energyHistory[i].push_back(replicas[i].getMakespan());
+        //     if (i < numReplicas - 1) SAPHistory[i].push_back(ratios[i]);
+        // }
 
         // Check time and print progress
         currentTime = std::chrono::high_resolution_clock::now();
@@ -212,7 +217,7 @@ JSSPSolution AdaptiveParallelTempering::solve() {
     }
     std::cout << std::endl;
 
-    saveHistory(hisPrefix);
+    // saveHistory(hisPrefix);
     
     return bestSolution;
 }

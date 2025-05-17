@@ -311,81 +311,81 @@ bool JSSPSolution::hasCycle() const {
     return count < graph.size();
 }
 
-void JSSPSolution::initialize() {
-    int numMachines = problem->getNumMachines();
-    int numJobs = problem->getNumJobs();
+// void JSSPSolution::initialize() {
+//     int numMachines = problem->getNumMachines();
+//     int numJobs = problem->getNumJobs();
     
-    // Clear machine job orders
-    for (int m = 0; m < numMachines; ++m) {
-        machineJobOrders[m].clear();
-    }
+//     // Clear machine job orders
+//     for (int m = 0; m < numMachines; ++m) {
+//         machineJobOrders[m].clear();
+//     }
     
-    // Track next operation index for each job
-    std::vector<int> jobProgress(numJobs, 0);
+//     // Track next operation index for each job
+//     std::vector<int> jobProgress(numJobs, 0);
     
-    // Track when each machine and job becomes available
-    std::vector<int> machineTime(numMachines, 0);
-    std::vector<int> jobTime(numJobs, 0);
+//     // Track when each machine and job becomes available
+//     std::vector<int> machineTime(numMachines, 0);
+//     std::vector<int> jobTime(numJobs, 0);
     
-    // Keep processing until all operations are scheduled
-    bool allDone = false;
-    while (!allDone) {
-        allDone = true;
+//     // Keep processing until all operations are scheduled
+//     bool allDone = false;
+//     while (!allDone) {
+//         allDone = true;
         
-        // Find machine with earliest availability
-        int earliestMachine = 0;
-        int earliestTime = INT_MAX;
+//         // Find machine with earliest availability
+//         int earliestMachine = 0;
+//         int earliestTime = INT_MAX;
         
-        for (int m = 0; m < numMachines; ++m) {
-            if (machineTime[m] < earliestTime) {
-                earliestMachine = m;
-                earliestTime = machineTime[m];
-            }
-        }
+//         for (int m = 0; m < numMachines; ++m) {
+//             if (machineTime[m] < earliestTime) {
+//                 earliestMachine = m;
+//                 earliestTime = machineTime[m];
+//             }
+//         }
         
-        // Find a job that needs this machine
-        bool foundJob = false;
-        int selectedJob = -1;
-        int earliestJobTime = INT_MAX;
+//         // Find a job that needs this machine
+//         bool foundJob = false;
+//         int selectedJob = -1;
+//         int earliestJobTime = INT_MAX;
         
-        for (int j = 0; j < numJobs; ++j) {
-            // Skip completed jobs
-            if (jobProgress[j] >= numMachines) {
-                continue;
-            }
+//         for (int j = 0; j < numJobs; ++j) {
+//             // Skip completed jobs
+//             if (jobProgress[j] >= numMachines) {
+//                 continue;
+//             }
             
-            allDone = false; // At least one job isn't done
+//             allDone = false; // At least one job isn't done
             
-            // Check if this job's next operation needs the earliest machine
-            Operation op = problem->getJobs()[j][jobProgress[j]];
-            if (op.machine == earliestMachine && jobTime[j] < earliestJobTime) {
-                selectedJob = j;
-                earliestJobTime = jobTime[j];
-                foundJob = true;
-            }
-        }
+//             // Check if this job's next operation needs the earliest machine
+//             Operation op = problem->getJobs()[j][jobProgress[j]];
+//             if (op.machine == earliestMachine && jobTime[j] < earliestJobTime) {
+//                 selectedJob = j;
+//                 earliestJobTime = jobTime[j];
+//                 foundJob = true;
+//             }
+//         }
         
-        if (foundJob) {
-            // Schedule this operation
-            Operation op = problem->getJobs()[selectedJob][jobProgress[selectedJob]];
-            machineJobOrders[earliestMachine].push_back(op);
+//         if (foundJob) {
+//             // Schedule this operation
+//             Operation op = problem->getJobs()[selectedJob][jobProgress[selectedJob]];
+//             machineJobOrders[earliestMachine].push_back(op);
             
-            // Update times
-            int startTime = std::max(machineTime[earliestMachine], jobTime[selectedJob]);
-            machineTime[earliestMachine] = startTime + op.duration;
-            jobTime[selectedJob] = startTime + op.duration;
+//             // Update times
+//             int startTime = std::max(machineTime[earliestMachine], jobTime[selectedJob]);
+//             machineTime[earliestMachine] = startTime + op.duration;
+//             jobTime[selectedJob] = startTime + op.duration;
             
-            // Move to next operation for this job
-            jobProgress[selectedJob]++;
-        } else if (!allDone) {
-            // No job needs this machine right now, advance the machine time
-            machineTime[earliestMachine] = INT_MAX; // Mark as temporarily unavailable
-        }
-    }
+//             // Move to next operation for this job
+//             jobProgress[selectedJob]++;
+//         } else if (!allDone) {
+//             // No job needs this machine right now, advance the machine time
+//             machineTime[earliestMachine] = INT_MAX; // Mark as temporarily unavailable
+//         }
+//     }
     
-    initGraph();
-    updateGraph();
-}
+//     initGraph();
+//     updateGraph();
+// }
 
 void JSSPSolution::initialize() {
     int numMachines = problem->getNumMachines();
