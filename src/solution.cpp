@@ -54,12 +54,19 @@ void JSSPSolution::generateNeighbor(std::mt19937_64& rng) {
         throw std::runtime_error("Solution not associated with a JSSP problem");
     }
 
+    double epsilon = 0.5;
+
+    // Add a random number generator for epsilon probability check
+    std::uniform_real_distribution<double> epsilonDist(0.0, 1.0);
+    bool useRandomSearch = epsilonDist(rng) < epsilon;
+
     bool found = false;
     std::pair<int,int> topPair;
 
-    if (!pq.empty()){
-        for (auto it = pq.begin(); it != pq.end(); ++it){
-            if (it->second == 2){
+    // Only check the priority queue if we're not forcing random search with epsilon
+    if (!useRandomSearch && !pq.empty()) {
+        for (auto it = pq.begin(); it != pq.end(); ++it) {
+            if (it->second == 2) {
                 topPair = it->first;
                 pq.erase(it);
                 found = true;
@@ -68,83 +75,88 @@ void JSSPSolution::generateNeighbor(std::mt19937_64& rng) {
         }
     }
     
-    if (found) {                    
-            int a = topPair.first;
-            int b = topPair.second;
-            int aIdx = piDict[a];
-            int bIdx = piDict[b];
-            int c = pi[aIdx + 1];
+    if (found && !useRandomSearch) {                    
+        int a = topPair.first;
+        int b = topPair.second;
+        int aIdx = piDict[a];
+        int bIdx = piDict[b];
+        int c = pi[aIdx + 1];
+        
+        int aJob = graph[a].op.job;
+        int bJob = graph[b].op.job;
+        int cJob = graph[c].op.job;
+        
+        if ((cJob != aJob && cJob != bJob) || (cJob == aJob)) {
+            // (a, c, b) to (b, a, c)
+            pi[aIdx] = b;
+            pi[aIdx + 1] = a;
+            pi[bIdx] = c;
+            piDict[a] = aIdx + 1;
+            piDict[b] = aIdx;
+            piDict[c] = bIdx;
             
-            int aJob = graph[a].op.job;
-            int bJob = graph[b].op.job;
-            int cJob = graph[c].op.job;
+            // Update priority queue and edge details
+            pq[{b, a}] = 1;
+            outEdges[b][a] = 1;
+            inEdges[a][b] = 1;
             
-            if ((cJob != aJob && cJob != bJob) || (cJob == aJob)) {
-                // (a, c, b) to (b, a, c)
-                pi[aIdx] = b;
-                pi[aIdx + 1] = a;
-                pi[bIdx] = c;
-                piDict[a] = aIdx + 1;
-                piDict[b] = aIdx;
-                piDict[c] = bIdx;
-                
-                // Update priority queue and edge details
-                pq[{b, a}] = 1;
-                outEdges[b][a] = 1;
-                inEdges[a][b] = 1;
-                
-                // Update connections
-                updateConnections(a, 1);
-                updateConnections(c, 1);
-                updateConnections(b, -2);
-            }
-            else {
-                // (a, c, b) to (c, b, a)
-                pi[aIdx] = c;
-                pi[aIdx + 1] = b;
-                pi[bIdx] = a;
-                piDict[a] = bIdx;
-                piDict[b] = aIdx + 1;
-                piDict[c] = aIdx;
-                
-                // Update priority queue and graph
-                pq[{b, a}] = 1;
-                outEdges[b][a] = 1;
-                inEdges[a][b] = 1;
-                
-                // Update connections
-                updateConnections(a, 2);
-                updateConnections(c, -1);
-                updateConnections(b, -1);
-            }
-
-            // Remove b from a's outgoing edges
-            auto& aOutEdges = graph[a].outEdges;
-            aOutEdges.erase(
-                std::remove_if(aOutEdges.begin(), aOutEdges.end(),
-                    [b](const std::pair<int, int>& edge) {
-                        return edge.first == b;
-                    }),
-                aOutEdges.end()
-            );
-
-            // Add a to b's outgoing edges
-            int aDuration = graph[a].op.duration;
-            graph[b].outEdges.push_back({a, aDuration});
-
-            // Update the outEdges and inEdges maps to match the graph changes
-            if (outEdges[a].find(b) != outEdges[a].end()) {
-                outEdges[a].erase(b);
-            }
-            if (inEdges[b].find(a) != inEdges[b].end()) {
-                inEdges[b].erase(a);
-            }
-            
-            recomputeLongestPaths(b);
+            // Update connections
+            updateConnections(a, 1);
+            updateConnections(c, 1);
+            updateConnections(b, -2);
         }
-    
-    if (!found) {        
-        while (true) {            
+        else {
+            // (a, c, b) to (c, b, a)
+            pi[aIdx] = c;
+            pi[aIdx + 1] = b;
+            pi[bIdx] = a;
+            piDict[a] = bIdx;
+            piDict[b] = aIdx + 1;
+            piDict[c] = aIdx;
+            
+            // Update priority queue and graph
+            pq[{b, a}] = 1;
+            outEdges[b][a] = 1;
+            inEdges[a][b] = 1;
+            
+            // Update connections
+            updateConnections(a, 2);
+            updateConnections(c, -1);
+            updateConnections(b, -1);
+        }
+
+        // Remove b from a's outgoing edges
+        auto& aOutEdges = graph[a].outEdges;
+        aOutEdges.erase(
+            std::remove_if(aOutEdges.begin(), aOutEdges.end(),
+                [b](const std::pair<int, int>& edge) {
+                    return edge.first == b;
+                }),
+            aOutEdges.end()
+        );
+
+        // Add a to b's outgoing edges
+        int aDuration = graph[a].op.duration;
+        graph[b].outEdges.push_back({a, aDuration});
+
+        // Update the outEdges and inEdges maps to match the graph changes
+        if (outEdges[a].find(b) != outEdges[a].end()) {
+            outEdges[a].erase(b);
+        }
+        if (inEdges[b].find(a) != inEdges[b].end()) {
+            inEdges[b].erase(a);
+        }
+        
+        recomputeLongestPaths(b);
+    }
+    else {  // Either found is false or useRandomSearch is true
+        // Use random search approach
+        int maxAttempts = 100;  // Prevent infinite loops
+        int attempts = 0;
+        
+        while (attempts < maxAttempts) {
+            attempts++;
+            
             int numMachines = problem->getNumMachines();
             std::uniform_int_distribution<int> machineDist(0, numMachines - 1);
             int machine = machineDist(rng);
@@ -173,8 +185,141 @@ void JSSPSolution::generateNeighbor(std::mt19937_64& rng) {
                 std::swap(machineJobOrders[machine][pos], machineJobOrders[machine][pos + 1]);
             }
         }
+        
+        // If we reached max attempts without finding a valid swap, we could log or handle this case
+        if (attempts >= maxAttempts) {
+            // Could log a warning or use a fallback strategy
+            // For now, we'll just leave the solution unchanged
+        }
     }
 }
+
+// void JSSPSolution::generateNeighbor(std::mt19937_64& rng) {
+//     if (!problem) {
+//         throw std::runtime_error("Solution not associated with a JSSP problem");
+//     }
+
+//     bool found = false;
+//     std::pair<int,int> topPair;
+
+//     if (!pq.empty()){
+//         for (auto it = pq.begin(); it != pq.end(); ++it){
+//             if (it->second == 2){
+//                 topPair = it->first;
+//                 pq.erase(it);
+//                 found = true;
+//                 break;
+//             }
+//         }
+//     }
+    
+//     if (found) {                    
+//             int a = topPair.first;
+//             int b = topPair.second;
+//             int aIdx = piDict[a];
+//             int bIdx = piDict[b];
+//             int c = pi[aIdx + 1];
+            
+//             int aJob = graph[a].op.job;
+//             int bJob = graph[b].op.job;
+//             int cJob = graph[c].op.job;
+            
+//             if ((cJob != aJob && cJob != bJob) || (cJob == aJob)) {
+//                 // (a, c, b) to (b, a, c)
+//                 pi[aIdx] = b;
+//                 pi[aIdx + 1] = a;
+//                 pi[bIdx] = c;
+//                 piDict[a] = aIdx + 1;
+//                 piDict[b] = aIdx;
+//                 piDict[c] = bIdx;
+                
+//                 // Update priority queue and edge details
+//                 pq[{b, a}] = 1;
+//                 outEdges[b][a] = 1;
+//                 inEdges[a][b] = 1;
+                
+//                 // Update connections
+//                 updateConnections(a, 1);
+//                 updateConnections(c, 1);
+//                 updateConnections(b, -2);
+//             }
+//             else {
+//                 // (a, c, b) to (c, b, a)
+//                 pi[aIdx] = c;
+//                 pi[aIdx + 1] = b;
+//                 pi[bIdx] = a;
+//                 piDict[a] = bIdx;
+//                 piDict[b] = aIdx + 1;
+//                 piDict[c] = aIdx;
+                
+//                 // Update priority queue and graph
+//                 pq[{b, a}] = 1;
+//                 outEdges[b][a] = 1;
+//                 inEdges[a][b] = 1;
+                
+//                 // Update connections
+//                 updateConnections(a, 2);
+//                 updateConnections(c, -1);
+//                 updateConnections(b, -1);
+//             }
+
+//             // Remove b from a's outgoing edges
+//             auto& aOutEdges = graph[a].outEdges;
+//             aOutEdges.erase(
+//                 std::remove_if(aOutEdges.begin(), aOutEdges.end(),
+//                     [b](const std::pair<int, int>& edge) {
+//                         return edge.first == b;
+//                     }),
+//                 aOutEdges.end()
+//             );
+
+//             // Add a to b's outgoing edges
+//             int aDuration = graph[a].op.duration;
+//             graph[b].outEdges.push_back({a, aDuration});
+
+//             // Update the outEdges and inEdges maps to match the graph changes
+//             if (outEdges[a].find(b) != outEdges[a].end()) {
+//                 outEdges[a].erase(b);
+//             }
+//             if (inEdges[b].find(a) != inEdges[b].end()) {
+//                 inEdges[b].erase(a);
+//             }
+            
+//             recomputeLongestPaths(b);
+//         }
+    
+//     if (!found) {        
+//         while (true) {            
+//             int numMachines = problem->getNumMachines();
+//             std::uniform_int_distribution<int> machineDist(0, numMachines - 1);
+//             int machine = machineDist(rng);
+            
+//             if (machineJobOrders[machine].size() < 2) {
+//                 continue;
+//             }
+            
+//             std::uniform_int_distribution<int> posDist(0, machineJobOrders[machine].size() - 2);
+//             int pos = posDist(rng);
+            
+//             // Swap operations
+//             std::swap(machineJobOrders[machine][pos], machineJobOrders[machine][pos + 1]);
+            
+//             updateGraph();
+            
+//             if (!hasCycle()) {
+//                 // Recompute paths and priority queue
+//                 computeLongestPaths();
+//                 buildPriorityQueue();
+//                 updateMakespan();
+//                 break;
+//             }
+//             else {
+//                 // Undo the swap if it creates a cycle
+//                 std::swap(machineJobOrders[machine][pos], machineJobOrders[machine][pos + 1]);
+//             }
+//         }
+//     }
+// }
 
 void JSSPSolution::initGraph() {
     if (!problem) {
@@ -310,82 +455,6 @@ bool JSSPSolution::hasCycle() const {
     // If count is less than the number of vertices, there's a cycle
     return count < graph.size();
 }
-
-// void JSSPSolution::initialize() {
-//     int numMachines = problem->getNumMachines();
-//     int numJobs = problem->getNumJobs();
-    
-//     // Clear machine job orders
-//     for (int m = 0; m < numMachines; ++m) {
-//         machineJobOrders[m].clear();
-//     }
-    
-//     // Track next operation index for each job
-//     std::vector<int> jobProgress(numJobs, 0);
-    
-//     // Track when each machine and job becomes available
-//     std::vector<int> machineTime(numMachines, 0);
-//     std::vector<int> jobTime(numJobs, 0);
-    
-//     // Keep processing until all operations are scheduled
-//     bool allDone = false;
-//     while (!allDone) {
-//         allDone = true;
-        
-//         // Find machine with earliest availability
-//         int earliestMachine = 0;
-//         int earliestTime = INT_MAX;
-        
-//         for (int m = 0; m < numMachines; ++m) {
-//             if (machineTime[m] < earliestTime) {
-//                 earliestMachine = m;
-//                 earliestTime = machineTime[m];
-//             }
-//         }
-        
-//         // Find a job that needs this machine
-//         bool foundJob = false;
-//         int selectedJob = -1;
-//         int earliestJobTime = INT_MAX;
-        
-//         for (int j = 0; j < numJobs; ++j) {
-//             // Skip completed jobs
-//             if (jobProgress[j] >= numMachines) {
-//                 continue;
-//             }
-            
-//             allDone = false; // At least one job isn't done
-            
-//             // Check if this job's next operation needs the earliest machine
-//             Operation op = problem->getJobs()[j][jobProgress[j]];
-//             if (op.machine == earliestMachine && jobTime[j] < earliestJobTime) {
-//                 selectedJob = j;
-//                 earliestJobTime = jobTime[j];
-//                 foundJob = true;
-//             }
-//         }
-        
-//         if (foundJob) {
-//             // Schedule this operation
-//             Operation op = problem->getJobs()[selectedJob][jobProgress[selectedJob]];
-//             machineJobOrders[earliestMachine].push_back(op);
-            
-//             // Update times
-//             int startTime = std::max(machineTime[earliestMachine], jobTime[selectedJob]);
-//             machineTime[earliestMachine] = startTime + op.duration;
-//             jobTime[selectedJob] = startTime + op.duration;
-            
-//             // Move to next operation for this job
-//             jobProgress[selectedJob]++;
-//         } else if (!allDone) {
-//             // No job needs this machine right now, advance the machine time
-//             machineTime[earliestMachine] = INT_MAX; // Mark as temporarily unavailable
-//         }
-//     }
-    
-//     initGraph();
-//     updateGraph();
-// }
 
 void JSSPSolution::initialize() {
     int numMachines = problem->getNumMachines();
